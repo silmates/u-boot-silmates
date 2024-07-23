@@ -1,0 +1,6 @@
+SM-i.MX8MN BOARD
+M:	Jigar Patel <jigar@silmates.com>
+S:	Maintained
+F:	board/silmates/imx8mm-mez/
+F:	include/configs/imx8mm_mez.h
+F:	configs/sm_imx8mm_mez_defconfig

@@ -1,75 +1,22 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2018-2019 NXP
+ * Copyright 2018-2021 NXP
  */
 
 #include <common.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <log.h>
 #include <spl.h>
 #include <asm/mach-imx/image.h>
+#include <u-boot/lz4.h>
 #ifdef CONFIG_AHAB_BOOT
-#include <asm/arch/sci/sci.h>
+#include <asm/mach-imx/ahab.h>
 #endif
-
-#define SEC_SECURE_RAM_BASE		0x31800000UL
-#define SEC_SECURE_RAM_END_BASE		(SEC_SECURE_RAM_BASE + 0xFFFFUL)
-#define SECO_LOCAL_SEC_SEC_SECURE_RAM_BASE	0x60000000UL
-
-#define SECO_PT         2U
-
-#ifdef CONFIG_AHAB_BOOT
-static int authenticate_image(struct boot_img_t *img, int image_index)
-{
-	sc_faddr_t start, end;
-	sc_rm_mr_t mr;
-	int err;
-	int ret = 0;
-
-	debug("img %d, dst 0x%x, src 0x%x, size 0x%x\n",
-	      image_index, (uint32_t)img->dst, img->offset, img->size);
-
-	/* Find the memreg and set permission for seco pt */
-	err = sc_rm_find_memreg(-1, &mr,
-				img->dst & ~(CONFIG_SYS_CACHELINE_SIZE - 1),
-				ALIGN(img->dst + img->size, CONFIG_SYS_CACHELINE_SIZE) - 1);
-
-	if (err) {
-		printf("can't find memreg for image %d load address 0x%x, error %d\n",
-		       image_index, img->dst & ~(CONFIG_SYS_CACHELINE_SIZE - 1), err);
-		return -ENOMEM;
-	}
-
-	err = sc_rm_get_memreg_info(-1, mr, &start, &end);
-	if (!err)
-		debug("memreg %u 0x%x -- 0x%x\n", mr, start, end);
-
-	err = sc_rm_set_memreg_permissions(-1, mr,
-					   SECO_PT, SC_RM_PERM_FULL);
-	if (err) {
-		printf("set permission failed for img %d, error %d\n",
-		       image_index, err);
-		return -EPERM;
-	}
-
-	err = sc_seco_authenticate(-1, SC_SECO_VERIFY_IMAGE,
-				   1 << image_index);
-	if (err) {
-		printf("authenticate img %d failed, return %d\n",
-		       image_index, err);
-		ret = -EIO;
-	}
-
-	err = sc_rm_set_memreg_permissions(-1, mr,
-					   SECO_PT, SC_RM_PERM_NONE);
-	if (err) {
-		printf("remove permission failed for img %d, error %d\n",
-		       image_index, err);
-		ret = -EPERM;
-	}
-
-	return ret;
-}
+#ifdef CONFIG_IMX_TRUSTY_OS
+#define TEE_DEST_SIZE   0x04000000
+#define LZ4_MAGIC_NUM	0x184D2204
+#define LZ4_OFFSET	0x00800000
 #endif
 
 static struct boot_img_t *read_auth_image(struct spl_image_info *spl_image,
@@ -110,9 +57,28 @@ static struct boot_img_t *read_auth_image(struct spl_image_info *spl_image,
 	}
 
 #ifdef CONFIG_AHAB_BOOT
-	if (authenticate_image(&images[image_index], image_index)) {
-		printf("Failed to authenticate image %d\n", image_index);
+	if (ahab_verify_cntr_image(&images[image_index], image_index))
 		return NULL;
+#endif
+
+#ifdef CONFIG_IMX_TRUSTY_OS
+	size_t dest_size = TEE_DEST_SIZE;
+
+	if (IS_ENABLED(CONFIG_SPL_LZ4)) {
+                u32 *lz4_magic_num = (void *)images[image_index].entry;
+
+                if (*lz4_magic_num == LZ4_MAGIC_NUM)
+		{
+			memcpy((void *)(images[image_index].entry + LZ4_OFFSET),
+					(void *)images[image_index].entry, images[image_index].size);
+			if (ulz4fn((void *)(images[image_index].entry+ LZ4_OFFSET), images[image_index].size,
+					(void *)images[image_index].entry, &dest_size))
+			{
+				printf("Decompress image fail!\n");
+				return NULL;
+			}
+			images[image_index].size = dest_size;
+		}
 	}
 #endif
 
@@ -134,21 +100,27 @@ static int read_auth_container(struct spl_image_info *spl_image,
 	 * It will not override the ATF code, so safe to use it here,
 	 * no need malloc
 	 */
-	container = (struct container_hdr *)spl_get_load_buffer(-size, size);
+	container = malloc(size);
+	if (!container)
+		return -ENOMEM;
 
 	debug("%s: container: %p sector: %lu sectors: %u\n", __func__,
 	      container, sector, sectors);
-	if (info->read(info, sector, sectors, container) != sectors)
-		return -EIO;
+	if (info->read(info, sector, sectors, container) != sectors) {
+		ret = -EIO;
+		goto end;
+	}
 
 	if (container->tag != 0x87 && container->version != 0x0) {
 		printf("Wrong container header");
-		return -ENOENT;
+		ret = -ENOENT;
+		goto end;
 	}
 
 	if (!container->num_images) {
 		printf("Wrong container, no image found");
-		return -ENOENT;
+		ret = -ENOENT;
+		goto end;
 	}
 
 	length = container->length_lsb + (container->length_msb << 8);
@@ -158,25 +130,24 @@ static int read_auth_container(struct spl_image_info *spl_image,
 		size = roundup(length, info->bl_len);
 		sectors = size / info->bl_len;
 
-		container = (struct container_hdr *)spl_get_load_buffer(-size, size);
+		free(container);
+		container = malloc(size);
+		if (!container)
+			return -ENOMEM;
 
 		debug("%s: container: %p sector: %lu sectors: %u\n",
 		      __func__, container, sector, sectors);
 		if (info->read(info, sector, sectors, container) !=
-		    sectors)
-			return -EIO;
+		    sectors) {
+			ret = -EIO;
+			goto end;
+		}
 	}
 
 #ifdef CONFIG_AHAB_BOOT
-	memcpy((void *)SEC_SECURE_RAM_BASE, (const void *)container,
-	       ALIGN(length, CONFIG_SYS_CACHELINE_SIZE));
-
-	ret = sc_seco_authenticate(-1, SC_SECO_AUTH_CONTAINER,
-				   SECO_LOCAL_SEC_SEC_SECURE_RAM_BASE);
-	if (ret) {
-		printf("authenticate container hdr failed, return %d\n", ret);
-		return ret;
-	}
+	ret = ahab_auth_cntr_hdr(container, length);
+	if (ret)
+		goto end_auth;
 #endif
 
 	for (i = 0; i < container->num_images; i++) {
@@ -195,11 +166,20 @@ static int read_auth_container(struct spl_image_info *spl_image,
 		}
 	}
 
+#if defined(CONFIG_SPL_BUILD) && defined(CONFIG_IMX_TRUSTY_OS)
+	/* Everything checks out, get the sw_version now. */
+	spl_image->rbindex = (uint64_t)container->sw_version;
+#endif
+
+
 end_auth:
 #ifdef CONFIG_AHAB_BOOT
-	if (sc_seco_authenticate(-1, SC_SECO_REL_CONTAINER, 0))
-		printf("Error: release container failed!\n");
+	ahab_auth_release();
 #endif
+
+end:
+	free(container);
+
 	return ret;
 }
 

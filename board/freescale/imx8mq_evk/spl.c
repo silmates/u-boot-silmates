@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2018 NXP
+ * Copyright 2018, 2021 NXP
  *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
+#include <cpu_func.h>
 #include <hang.h>
 #include <image.h>
 #include <init.h>
@@ -22,12 +22,16 @@
 #include <asm/mach-imx/gpio.h>
 #include <asm/mach-imx/mxc_i2c.h>
 #include <fsl_esdhc_imx.h>
+#include <fsl_sec.h>
 #include <mmc.h>
 #include <linux/delay.h>
 #include <power/pmic.h>
 #include <power/pfuze100_pmic.h>
 #include <spl.h>
 #include "../common/pfuze.h"
+#include <asm/arch/imx8mq_sec_def.h>
+#include <asm/arch/imx8m_csu.h>
+#include <asm/arch/imx8m_rdc.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -125,7 +129,7 @@ int board_mmc_init(struct bd_info *bis)
 		switch (i) {
 		case 0:
 			init_clk_usdhc(0);
-			usdhc_cfg[0].sdhc_clk = mxc_get_clock(USDHC1_CLK_ROOT);
+			usdhc_cfg[0].sdhc_clk = mxc_get_clock(MXC_ESDHC_CLK);
 			imx_iomux_v3_setup_multiple_pads(usdhc1_pads,
 							 ARRAY_SIZE(usdhc1_pads));
 			gpio_request(USDHC1_PWR_GPIO, "usdhc1_reset");
@@ -135,7 +139,7 @@ int board_mmc_init(struct bd_info *bis)
 			break;
 		case 1:
 			init_clk_usdhc(1);
-			usdhc_cfg[1].sdhc_clk = mxc_get_clock(USDHC2_CLK_ROOT);
+			usdhc_cfg[1].sdhc_clk = mxc_get_clock(MXC_ESDHC2_CLK);
 			imx_iomux_v3_setup_multiple_pads(usdhc2_pads,
 							 ARRAY_SIZE(usdhc2_pads));
 			gpio_request(USDHC2_PWR_GPIO, "usdhc2_reset");
@@ -199,6 +203,21 @@ int power_init_board(void)
 
 void spl_board_init(void)
 {
+	if (IS_ENABLED(CONFIG_FSL_CAAM)) {
+		if (sec_init())
+			printf("\nsec_init failed!\n");
+	}
+
+#ifndef CONFIG_SPL_USB_SDP_SUPPORT
+	/* Serial download mode */
+	if (is_usb_boot()) {
+		puts("Back to ROM, SDP\n");
+		restore_boot_params();
+	}
+#endif
+
+	init_usb_clk();
+
 	puts("Normal Boot\n");
 }
 
@@ -212,12 +231,30 @@ int board_fit_config_name_match(const char *name)
 }
 #endif
 
+#define GPR_PCIE_VREG_BYPASS	BIT(12)
+static void enable_pcie_vreg(bool enable)
+{
+	struct iomuxc_gpr_base_regs *gpr =
+		(struct iomuxc_gpr_base_regs *)IOMUXC_GPR_BASE_ADDR;
+
+	if (!enable) {
+		setbits_le32(&gpr->gpr[14], GPR_PCIE_VREG_BYPASS);
+		setbits_le32(&gpr->gpr[16], GPR_PCIE_VREG_BYPASS);
+	} else {
+		clrbits_le32(&gpr->gpr[14], GPR_PCIE_VREG_BYPASS);
+		clrbits_le32(&gpr->gpr[16], GPR_PCIE_VREG_BYPASS);
+	}
+}
+
 void board_init_f(ulong dummy)
 {
 	int ret;
 
-	/* Clear global data */
-	memset((void *)gd, 0, sizeof(gd_t));
+	/* Clear the BSS. */
+	memset(__bss_start, 0, __bss_end - __bss_start);
+
+	/* PCIE_VPH connects to 3.3v on EVK, enable VREG to generate 1.8V to PHY */
+	enable_pcie_vreg(true);
 
 	arch_cpu_init();
 
@@ -228,9 +265,6 @@ void board_init_f(ulong dummy)
 	timer_init();
 
 	preloader_console_init();
-
-	/* Clear the BSS. */
-	memset(__bss_start, 0, __bss_end - __bss_start);
 
 	ret = spl_init();
 	if (ret) {
@@ -249,3 +283,53 @@ void board_init_f(ulong dummy)
 
 	board_init_r(NULL, 0);
 }
+
+#ifdef CONFIG_ANDROID_SUPPORT
+void spl_board_prepare_for_boot(void)
+{
+	uint32_t val;
+	struct imx_csu_cfg csu_cfg[] = {
+		/* peripherals csl setting */
+		CSU_CSLx(CSU_CSL_OCRAM, CSU_SEC_LEVEL_2, LOCKED),
+		CSU_CSLx(CSU_CSL_OCRAM_S, CSU_SEC_LEVEL_2, LOCKED),
+		CSU_CSLx(CSU_CSL_RDC, CSU_SEC_LEVEL_3, LOCKED),
+		CSU_CSLx(CSU_CSL_TZASC, CSU_SEC_LEVEL_4, LOCKED),
+
+		/* SA setting */
+		CSU_SA(CSU_SA_M4, 1, LOCKED),
+		CSU_SA(CSU_SA_SDMA1, 1, LOCKED),
+		CSU_SA(CSU_SA_LCDIF, 1, LOCKED),
+		CSU_SA(CSU_SA_USB, 1, LOCKED),
+		CSU_SA(CSU_SA_PCIE_CTRL, 1, LOCKED),
+		CSU_SA(CSU_SA_VPU_DECODER, 1, LOCKED),
+		CSU_SA(CSU_SA_GPU, 1, LOCKED),
+		CSU_SA(CSU_SA_ENET1, 1, LOCKED),
+		CSU_SA(CSU_SA_USDHC1, 1, LOCKED),
+		CSU_SA(CSU_SA_USDHC2, 1, LOCKED),
+		CSU_SA(CSU_SA_DISPLAY_CONTROLLER, 1, LOCKED),
+		CSU_SA(CSU_SA_HUGO, 1, LOCKED),
+		CSU_SA(CSU_SA_DAP, 1, LOCKED),
+		CSU_SA(CSU_SA_SDMA2, 1, LOCKED),
+#ifdef CONFIG_IMX_TRUSTY_OS
+		CSU_CSLx(CSU_CSL_VPU_SEC, CSU_SEC_LEVEL_5, LOCKED),
+#endif
+		{0}
+	};
+
+	struct imx_rdc_cfg rdc_cfg[] = {
+		RDC_MDAn(RDC_MDA_DCSS, DID2),
+		{0},
+	};
+
+	/* csu config */
+	imx_csu_init(csu_cfg);
+
+	/* rdc config */
+	imx_rdc_init(rdc_cfg);
+
+	/* config the ocram memory range for secure access */
+	setbits_le32(IOMUXC_GPR_BASE_ADDR + 0x2c, 0x421);
+	val = readl(IOMUXC_GPR_BASE_ADDR + 0x2c);
+	setbits_le32(IOMUXC_GPR_BASE_ADDR + 0x2c, val | 0x3C3F0000);
+}
+#endif

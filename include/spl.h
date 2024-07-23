@@ -229,6 +229,9 @@ struct spl_image_info {
 	ulong dcrc_length;
 	ulong dcrc;
 #endif
+#ifdef CONFIG_IMX_TRUSTY_OS
+	uint64_t rbindex;
+#endif
 };
 
 /**
@@ -329,6 +332,7 @@ int spl_load_simple_fit(struct spl_image_info *spl_image,
 
 #define SPL_COPY_PAYLOAD_ONLY	1
 #define SPL_FIT_FOUND		2
+#define SPL_FIT_BYPASS_POST_LOAD		4
 
 /**
  * spl_load_legacy_img() - Loads a legacy image from a device.
@@ -810,7 +814,7 @@ int board_return_to_bootrom(struct spl_image_info *spl_image,
  * board_spl_fit_post_load - allow process images after loading finished
  * @fit: Pointer to a valid Flattened Image Tree blob
  */
-void board_spl_fit_post_load(const void *fit);
+void board_spl_fit_post_load(const void *fit, struct spl_image_info *spl_image);
 
 /**
  * board_spl_fit_size_align - specific size align before processing payload

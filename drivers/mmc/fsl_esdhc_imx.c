@@ -39,6 +39,9 @@
 #include <dm/ofnode.h>
 #include <linux/iopoll.h>
 #include <linux/dma-mapping.h>
+#if CONFIG_IS_ENABLED(IMX_MODULE_FUSE)
+#include <asm/mach-imx/sys_proto.h>
+#endif
 
 #ifndef ESDHCI_QUIRK_BROKEN_TIMEOUT_VALUE
 #ifdef CONFIG_FSL_USDHC
@@ -148,6 +151,8 @@ struct fsl_esdhc_priv {
 	struct fsl_esdhc *esdhc_regs;
 	unsigned int sdhc_clk;
 	struct clk per_clk;
+	struct clk ipg_clk;
+	struct clk ahb_clk;
 	unsigned int clock;
 	unsigned int mode;
 #if !CONFIG_IS_ENABLED(DM_MMC)
@@ -1034,6 +1039,11 @@ static int esdhc_init_common(struct fsl_esdhc_priv *priv, struct mmc *mmc)
 	/* Set timout to the maximum value */
 	esdhc_clrsetbits32(&regs->sysctl, SYSCTL_TIMEOUT_MASK, 14 << 16);
 
+	/* max 1ms delay with clock on for initialization */
+	esdhc_setbits32(&regs->vendorspec, VENDORSPEC_FRC_SDCLK_ON);
+	udelay(1000);
+	esdhc_clrbits32(&regs->vendorspec, VENDORSPEC_FRC_SDCLK_ON);
+
 	return 0;
 }
 
@@ -1156,8 +1166,6 @@ static int fsl_esdhc_init(struct fsl_esdhc_priv *priv,
 
 	esdhc_write32(&regs->irqstaten, SDHCI_IRQ_EN_BITS);
 	cfg = &plat->cfg;
-	if (!CONFIG_IS_ENABLED(DM_MMC))
-		memset(cfg, '\0', sizeof(*cfg));
 
 	caps = esdhc_read32(&regs->hostcapblt);
 
@@ -1263,6 +1271,13 @@ int fsl_esdhc_initialize(struct bd_info *bis, struct fsl_esdhc_cfg *cfg)
 	if (!cfg)
 		return -EINVAL;
 
+#if CONFIG_IS_ENABLED(IMX_MODULE_FUSE)
+	if (esdhc_fused(cfg->esdhc_base)) {
+		printf("ESDHC@0x%lx is fused, disable it\n", cfg->esdhc_base);
+		return -ENODEV;
+	}
+#endif
+
 	priv = calloc(sizeof(struct fsl_esdhc_priv), 1);
 	if (!priv)
 		return -ENOMEM;
@@ -1291,6 +1306,8 @@ int fsl_esdhc_initialize(struct bd_info *bis, struct fsl_esdhc_cfg *cfg)
 		break;
 	default:
 		printf("invalid max bus width %u\n", cfg->max_bus_width);
+		free(plat);
+		free(priv);
 		return -EINVAL;
 	}
 
@@ -1371,6 +1388,14 @@ static int fsl_esdhc_of_to_plat(struct udevice *dev)
 	addr = dev_read_addr(dev);
 	if (addr == FDT_ADDR_T_NONE)
 		return -EINVAL;
+
+#if CONFIG_IS_ENABLED(IMX_MODULE_FUSE)
+	if (esdhc_fused(addr)) {
+		printf("ESDHC@0x%lx is fused, disable it\n", addr);
+		return -ENODEV;
+	}
+#endif
+
 	priv->esdhc_regs = (struct fsl_esdhc *)addr;
 	priv->dev = dev;
 	priv->mode = -1;
@@ -1487,10 +1512,26 @@ static int fsl_esdhc_probe(struct udevice *dev)
 	 * work as expected.
 	 */
 
-	init_clk_usdhc(dev_seq(dev));
-
 #if CONFIG_IS_ENABLED(CLK)
 	/* Assigned clock already set clock */
+	ret = clk_get_by_name(dev, "ipg", &priv->ipg_clk);
+	if (!ret) {
+		ret = clk_enable(&priv->ipg_clk);
+		if (ret) {
+			printf("Failed to enable ipg_clk\n");
+			return ret;
+		}
+	}
+
+	ret = clk_get_by_name(dev, "ahb", &priv->ahb_clk);
+	if (!ret) {
+		ret = clk_enable(&priv->ahb_clk);
+		if (ret) {
+			printf("Failed to enable ahb_clk\n");
+			return ret;
+		}
+	}
+
 	ret = clk_get_by_name(dev, "per", &priv->per_clk);
 	if (ret) {
 		printf("Failed to get per_clk\n");
@@ -1504,6 +1545,8 @@ static int fsl_esdhc_probe(struct udevice *dev)
 
 	priv->sdhc_clk = clk_get_rate(&priv->per_clk);
 #else
+	init_clk_usdhc(dev_seq(dev));
+
 	priv->sdhc_clk = mxc_get_clock(MXC_ESDHC_CLK + dev_seq(dev));
 	if (priv->sdhc_clk <= 0) {
 		dev_err(dev, "Unable to get clk for %s\n", dev->name);
@@ -1529,7 +1572,7 @@ static int fsl_esdhc_probe(struct udevice *dev)
 
 	upriv->mmc = mmc;
 
-	return esdhc_init_common(priv, mmc);
+	return 0;
 }
 
 static int fsl_esdhc_get_cd(struct udevice *dev)
@@ -1597,6 +1640,14 @@ static int fsl_esdhc_wait_dat0(struct udevice *dev, int state,
 	return ret;
 }
 
+static int fsl_esdhc_reinit(struct udevice *dev)
+{
+	struct fsl_esdhc_plat *plat = dev_get_plat(dev);
+	struct fsl_esdhc_priv *priv = dev_get_priv(dev);
+
+	return esdhc_init_common(priv, &plat->mmc);
+}
+
 static const struct dm_mmc_ops fsl_esdhc_ops = {
 	.get_cd		= fsl_esdhc_get_cd,
 	.send_cmd	= fsl_esdhc_send_cmd,
@@ -1608,6 +1659,7 @@ static const struct dm_mmc_ops fsl_esdhc_ops = {
 	.set_enhanced_strobe = fsl_esdhc_set_enhanced_strobe,
 #endif
 	.wait_dat0 = fsl_esdhc_wait_dat0,
+	.reinit = fsl_esdhc_reinit,
 };
 
 static struct esdhc_soc_data usdhc_imx7d_data = {

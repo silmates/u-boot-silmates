@@ -2,6 +2,7 @@
 /*
  * (C) Copyright 2009
  * Stefano Babic, DENX Software Engineering, sbabic@denx.de.
+ * Copyright 2018-2020 NXP
  */
 
 #ifndef _SYS_PROTO_H_
@@ -31,6 +32,7 @@ struct bd_info;
 #define is_mx7() (is_soc_type(MXC_SOC_MX7))
 #define is_imx8m() (is_soc_type(MXC_SOC_IMX8M))
 #define is_imx8() (is_soc_type(MXC_SOC_IMX8))
+#define is_imx9() (is_soc_type(MXC_SOC_IMX9))
 #define is_imxrt() (is_soc_type(MXC_SOC_IMXRT))
 
 #define is_mx6dqp() (is_cpu_type(MXC_CPU_MX6QP) || is_cpu_type(MXC_CPU_MX6DP))
@@ -73,15 +75,31 @@ struct bd_info;
 #define is_imx8mnud() (is_cpu_type(MXC_CPU_IMX8MNUD))
 #define is_imx8mnus() (is_cpu_type(MXC_CPU_IMX8MNUS))
 #define is_imx8mp() (is_cpu_type(MXC_CPU_IMX8MP)  || is_cpu_type(MXC_CPU_IMX8MPD) || \
-	is_cpu_type(MXC_CPU_IMX8MPL) || is_cpu_type(MXC_CPU_IMX8MP6))
+	is_cpu_type(MXC_CPU_IMX8MPL) || is_cpu_type(MXC_CPU_IMX8MP6) || is_cpu_type(MXC_CPU_IMX8MPUL))
 #define is_imx8mpd() (is_cpu_type(MXC_CPU_IMX8MPD))
 #define is_imx8mpl() (is_cpu_type(MXC_CPU_IMX8MPL))
 #define is_imx8mp6() (is_cpu_type(MXC_CPU_IMX8MP6))
+#define is_imx8mpul() (is_cpu_type(MXC_CPU_IMX8MPUL))
 
 #define is_imx8qxp() (is_cpu_type(MXC_CPU_IMX8QXP))
+#define is_imx8dxl() (is_cpu_type(MXC_CPU_IMX8DXL))
+
+#define is_imx93() (is_cpu_type(MXC_CPU_IMX93) || is_cpu_type(MXC_CPU_IMX9331) || \
+	is_cpu_type(MXC_CPU_IMX9332) || is_cpu_type(MXC_CPU_IMX9351) || is_cpu_type(MXC_CPU_IMX9322) || \
+	is_cpu_type(MXC_CPU_IMX9321) || is_cpu_type(MXC_CPU_IMX9312) || is_cpu_type(MXC_CPU_IMX9311))
+#define is_imx9351() (is_cpu_type(MXC_CPU_IMX9351))
+#define is_imx9332() (is_cpu_type(MXC_CPU_IMX9332))
+#define is_imx9331() (is_cpu_type(MXC_CPU_IMX9331))
+#define is_imx9322() (is_cpu_type(MXC_CPU_IMX9322))
+#define is_imx9321() (is_cpu_type(MXC_CPU_IMX9321))
+#define is_imx9312() (is_cpu_type(MXC_CPU_IMX9312))
+#define is_imx9311() (is_cpu_type(MXC_CPU_IMX9311))
 
 #define is_imxrt1020() (is_cpu_type(MXC_CPU_IMXRT1020))
 #define is_imxrt1050() (is_cpu_type(MXC_CPU_IMXRT1050))
+
+/* gd->flags reserves high 16 bits for arch-specific flags */
+#define GD_FLG_ARCH_IMX_USB_BOOT		0x80000000	 /* Only used for MX6/7, If set, the u-boot is booting from USB serial download */
 
 #ifdef CONFIG_MX6
 #define IMX6_SRC_GPR10_BMODE			BIT(28)
@@ -145,7 +163,7 @@ struct rproc_att {
 	u32 size; /* size of reg range */
 };
 
-#if defined(CONFIG_IMX8M) || defined(CONFIG_IMX8ULP)
+#if defined(CONFIG_IMX8M) || defined(CONFIG_IMX8ULP) || defined(CONFIG_IMX9)
 struct rom_api {
 	u16 ver;
 	u16 tag;
@@ -164,6 +182,13 @@ enum boot_dev_type_e {
 	BT_DEV_TYPE_MEM_DEV = 0xF,
 
 	BT_DEV_TYPE_INVALID = 0xFF
+};
+
+enum boot_stage_type {
+	BT_STAGE_PRIMARY = 0x6,
+	BT_STAGE_SECONDARY = 0x9,
+	BT_STAGE_RECOVERY = 0xa,
+	BT_STAGE_USB = 0x5,
 };
 
 #define QUERY_ROM_VER		1
@@ -207,6 +232,7 @@ void board_mem_get_layout(u64 *phys_sdram_1_start,
 			  u64 *phys_sdram_2_start,
 			  u64 *phys_sdram_2_size);
 
+int arch_auxiliary_core_up(u32 core_id, ulong boot_private_data);
 int arch_auxiliary_core_check_up(u32 core_id);
 
 int board_mmc_get_env_dev(int devno);
@@ -228,6 +254,14 @@ int mxs_reset_block(struct mxs_register_32 *reg);
 int mxs_wait_mask_set(struct mxs_register_32 *reg, u32 mask, u32 timeout);
 int mxs_wait_mask_clr(struct mxs_register_32 *reg, u32 mask, u32 timeout);
 
+void board_late_mmc_env_init(void);
+
+void vadc_power_up(void);
+void vadc_power_down(void);
+
+void pcie_power_up(void);
+void pcie_power_off(void);
+
 unsigned long call_imx_sip(unsigned long id, unsigned long reg0,
 			   unsigned long reg1, unsigned long reg2,
 			   unsigned long reg3);
@@ -241,4 +275,8 @@ void imx_get_mac_from_fuse(int dev_id, unsigned char *mac);
 void enable_ca7_smp(void);
 #endif
 
+int add_res_mem_dt_node(void *fdt, const char *name, phys_addr_t pa,
+			size_t size);
+int add_dt_path_subnode(void *fdt, const char *path, const char *subnode);
+void configure_tzc380(void);
 #endif

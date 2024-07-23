@@ -12,6 +12,8 @@
 #include <spl.h>
 #include <asm/mach-imx/image.h>
 #include <asm/arch/sys_proto.h>
+#include <asm/cache.h>
+#include <malloc.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -71,6 +73,38 @@ static ulong spl_romapi_read_seekable(struct spl_load_info *load,
 	u32 offset;
 
 	offset = sector * pagesize;
+
+	/* Handle corner case for ocram 0x980000 to 0x98ffff ecc region, ROM does not allow to access it */
+	if (is_imx8mp()) {
+		ulong ret;
+		void *new_buf;
+		if (((ulong)buf >= 0x980000 && (ulong)buf <= 0x98ffff)) {
+			new_buf = memalign(ARCH_DMA_MINALIGN, byte);
+			if (!new_buf) {
+				printf("Fail to allocate read buffer\n");
+				return 0;
+			}
+			ret = spl_romapi_raw_seekable_read(offset, byte, new_buf);
+			memcpy(buf, new_buf, ret);
+			free(new_buf);
+			return ret / pagesize;
+		} else if ((ulong)(buf + byte) >= 0x980000 && (ulong)(buf + byte) <= 0x98ffff) {
+			u32 over_size = (ulong)(buf + byte) - 0x97ffff;
+			over_size = (over_size + pagesize - 1) / pagesize * pagesize;
+
+			ret = spl_romapi_raw_seekable_read(offset, byte - over_size, buf);
+			new_buf = memalign(ARCH_DMA_MINALIGN, over_size);
+			if (!new_buf) {
+				printf("Fail to allocate read buffer\n");
+				return 0;
+			}
+
+			ret += spl_romapi_raw_seekable_read(offset + byte - over_size, over_size, new_buf);
+			memcpy(buf + byte - over_size, new_buf, ret);
+			free(new_buf);
+			return ret / pagesize;
+		}
+	}
 
 	return spl_romapi_raw_seekable_read(offset, byte, buf) / pagesize;
 }
@@ -171,6 +205,10 @@ static ulong get_fit_image_size(void *fit)
 	spl_load_info.read = spl_ram_load_read;
 	spl_load_info.priv = &last;
 
+        /* We call load_simple_fit is just to get total size, the image is not downloaded,
+         * so should bypass authentication
+         */
+	spl_image.flags = SPL_FIT_BYPASS_POST_LOAD;
 	spl_load_simple_fit(&spl_image, &spl_load_info,
 			    (uintptr_t)fit, fit);
 
@@ -370,15 +408,36 @@ int board_return_to_bootrom(struct spl_image_info *spl_image,
 {
 	volatile gd_t *pgd = gd;
 	int ret;
-	u32 boot;
+	u32 boot, bstage;
 
 	ret = g_rom_api->query_boot_infor(QUERY_BT_DEV, &boot,
 					  ((uintptr_t)&boot) ^ QUERY_BT_DEV);
+	ret |= g_rom_api->query_boot_infor(QUERY_BT_STAGE, &bstage,
+					   ((uintptr_t)&bstage) ^ QUERY_BT_STAGE);
 	set_gd(pgd);
 
 	if (ret != ROM_API_OKAY) {
 		puts("ROMAPI: failure at query_boot_info\n");
 		return -1;
+	}
+
+	printf("Boot Stage: ");
+
+	switch (bstage) {
+	case BT_STAGE_PRIMARY:
+		printf("Primary boot\n");
+		break;
+	case BT_STAGE_SECONDARY:
+		printf("Secondary boot\n");
+		break;
+	case BT_STAGE_RECOVERY:
+		printf("Recovery boot\n");
+		break;
+	case BT_STAGE_USB:
+		printf("USB boot\n");
+		break;
+	default:
+		printf("Unknow (0x%x)\n", bstage);
 	}
 
 	if (is_boot_from_stream_device(boot))

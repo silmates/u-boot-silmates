@@ -35,7 +35,7 @@ struct spl_fit_info {
 	int conf_node;		/* FDT offset to selected configuration node */
 };
 
-__weak void board_spl_fit_post_load(const void *fit)
+__weak void board_spl_fit_post_load(const void *fit, struct spl_image_info *spl_image)
 {
 }
 
@@ -66,6 +66,10 @@ static int find_node_from_desc(const void *fit, int node, const char *str)
 
 	return -ENOENT;
 }
+
+#ifdef CONFIG_IMX_TRUSTY_OS
+extern int spl_fit_get_rbindex(const void *fit);
+#endif
 
 /**
  * spl_fit_get_image_name(): By using the matching configuration subnode,
@@ -218,6 +222,15 @@ static int get_aligned_image_size(struct spl_load_info *info, int data_size,
 	return (data_size + info->bl_len - 1) / info->bl_len;
 }
 
+#if defined(CONFIG_DUAL_BOOTLOADER) && defined(CONFIG_IMX_TRUSTY_OS)
+__weak int get_tee_load(ulong *load)
+{
+	/* default return ok */
+	return 0;
+}
+
+#endif
+
 /**
  * spl_load_fit_image(): load the image described in a certain FIT node
  * @info:	points to information about the device to load data from
@@ -271,6 +284,21 @@ static int spl_load_fit_image(struct spl_load_info *info, ulong sector,
 		}
 		load_addr = image_info->load_addr;
 	}
+
+#if defined(CONFIG_DUAL_BOOTLOADER) && defined(CONFIG_IMX_TRUSTY_OS)
+	char *desc = NULL;
+
+	if (fit_get_desc(fit, node, &desc)) {
+		printf("can't found node description!\n");
+		return -ENOENT;
+	} else if (!strncmp(desc, "TEE firmware",
+				strlen("TEE firmware"))) {
+		if (get_tee_load(&load_addr)) {
+			printf("Failed to get TEE load address!\n");
+			return -ENOENT;
+		}
+	}
+#endif
 
 	if (!fit_image_get_data_position(fit, node, &offset)) {
 		external_data = true;
@@ -713,6 +741,16 @@ int spl_load_simple_fit(struct spl_image_info *spl_image,
 	if (ret < 0)
 		return ret;
 
+#ifdef CONFIG_IMX_TRUSTY_OS
+	int rbindex;
+	rbindex = spl_fit_get_rbindex(ctx.fit);
+	if (rbindex < 0) {
+		printf("Error! Can't get rollback index!\n");
+		return -1;
+	} else
+		spl_image->rbindex = rbindex;
+#endif
+
 	if (IS_ENABLED(CONFIG_SPL_FPGA))
 		spl_fit_load_fpga(&ctx, info, sector);
 
@@ -828,8 +866,7 @@ int spl_load_simple_fit(struct spl_image_info *spl_image,
 
 	spl_image->flags |= SPL_FIT_FOUND;
 
-	if (IS_ENABLED(CONFIG_IMX_HAB))
-		board_spl_fit_post_load(ctx.fit);
+	board_spl_fit_post_load(ctx.fit, spl_image);
 
 	return 0;
 }

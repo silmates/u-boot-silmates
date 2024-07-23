@@ -8,14 +8,17 @@ config IMX8M
 config IMX8MQ
 	bool
 	select IMX8M
+	select ARMV8_SPL_EXCEPTION_VECTORS
 
 config IMX8MM
 	bool
 	select IMX8M
+	select ARMV8_SPL_EXCEPTION_VECTORS
 
 config IMX8MN
 	bool
 	select IMX8M
+	select ARMV8_SPL_EXCEPTION_VECTORS
 
 config IMX8MP
 	bool
@@ -23,6 +26,33 @@ config IMX8MP
 
 config SYS_SOC
 	default "imx8m"
+
+config SECONDARY_BOOT_SECTOR_OFFSET
+	hex "SD/MMC sector offset used for ROM secondary boot"
+	default 0x0
+	depends on IMX8MQ || IMX8MM
+	help
+	  Set the sector offset to non-zero value in SPL used for
+	  secondary boot image. This value should be same as the
+	  firstSectorNumber in secondary image table.
+
+config SECURE_STICKY_BITS_LOCKUP
+	bool "Enable workaround to fix sticky bits lock up issue"
+	depends on IMX8MQ && IMX_HAB
+	default y
+
+config IMX_UNIQUE_ID
+	hex "Enable workaround to fix sticky bits lock up issue"
+	depends on IMX8MQ && IMX_HAB && !SECURE_STICKY_BITS_LOCKUP
+	default 0x0
+
+config IMX8M_MCU_RDC_START_CONFIG_ADDR
+	hex "Start address of mcu rdc config when mcu starts"
+	default 0x186000
+
+config IMX8M_MCU_RDC_STOP_CONFIG_ADDR
+	hex "Start address of mcu rdc config when mcu stops"
+	default 0x187000
 
 choice
 	prompt "NXP i.MX8M board select"
@@ -36,9 +66,12 @@ config TARGET_IMX8MQ_CM
 
 config TARGET_IMX8MQ_EVK
 	bool "imx8mq_evk"
-	select BINMAN
 	select IMX8MQ
 	select IMX8M_LPDDR4
+	select FSL_CAAM
+	select FSL_BLOB
+	select ARCH_MISC_INIT
+	select SPL_CRYPTO if SPL
 
 config TARGET_IMX8MQ_PHANBELL
 	bool "imx8mq_phanbell"
@@ -46,12 +79,64 @@ config TARGET_IMX8MQ_PHANBELL
 	select IMX8MQ
 	select IMX8M_LPDDR4
 
+config TARGET_IMX8MQ_DDR3L_VAL
+	bool "imx8mq_ddr3l_val"
+	select IMX8MQ
+
+config TARGET_IMX8MQ_DDR4_VAL
+	bool "imx8mq_ddr4_val"
+	select IMX8MQ
+	select IMX8M_DDR4
+
+config TARGET_IMX8MM_DDR4_VAL
+	bool "imx8mm DDR4 validation board"
+	select IMX8MM
+	select SUPPORT_SPL
+	select IMX8M_DDR4
+
+config TARGET_IMX8MM_DDR3L_VAL
+	bool "imx8mm DDR3L validation board"
+	select IMX8MM
+	select SUPPORT_SPL
+	select IMX8M_DDR3L
+
 config TARGET_IMX8MM_EVK
 	bool "imx8mm LPDDR4 EVK board"
-	select BINMAN
 	select IMX8MM
 	select SUPPORT_SPL
 	select IMX8M_LPDDR4
+	select FSL_CAAM
+	select FSL_BLOB
+	select ARCH_MISC_INIT
+	select SPL_CRYPTO if SPL
+
+config TARGET_IMX8MM_DDR4_EVK
+	bool "imx8mm DDR4 EVK board"
+	select IMX8MM
+	select SUPPORT_SPL
+	select IMX8M_DDR4
+	select FSL_CAAM
+	select FSL_BLOB
+	select ARCH_MISC_INIT
+	select SPL_CRYPTO if SPL
+
+config TARGET_IMX8MM_AB2
+	bool "imx8mm LPDDR4 Audio board 2.0"
+	select IMX8MM
+	select SUPPORT_SPL
+	select IMX8M_LPDDR4
+	select FSL_CAAM
+	select FSL_BLOB
+	select SPL_CRYPTO if SPL
+
+config TARGET_IMX8MM_DDR4_AB2
+	bool "imx8mm DDR4 Audio board 2.0"
+	select IMX8MM
+	select SUPPORT_SPL
+	select IMX8M_DDR4
+	select FSL_CAAM
+	select FSL_BLOB
+	select SPL_CRYPTO if SPL
 
 config TARGET_IMX8MM_ICORE_MX8MM
 	bool "Engicam i.Core MX8M Mini SOM"
@@ -87,17 +172,57 @@ config TARGET_KONTRON_MX8MM
 
 config TARGET_IMX8MN_EVK
 	bool "imx8mn LPDDR4 EVK board"
-	select BINMAN
 	select IMX8MN
 	select SUPPORT_SPL
 	select IMX8M_LPDDR4
+	select FSL_CAAM
+	select FSL_BLOB
+	select SPL_CRYPTO if SPL
 
 config TARGET_IMX8MN_DDR4_EVK
 	bool "imx8mn DDR4 EVK board"
-	select BINMAN
 	select IMX8MN
 	select SUPPORT_SPL
 	select IMX8M_DDR4
+	select FSL_CAAM
+	select FSL_BLOB
+	select SPL_CRYPTO if SPL
+
+config TARGET_IMX8MN_DDR3_EVK
+	bool "imx8mn 11x11 DDR3 EVK board"
+	select IMX8MN
+	select SUPPORT_SPL
+	select IMX8M_DDR3L
+	select FSL_CAAM
+	select FSL_BLOB
+	select SPL_CRYPTO if SPL
+
+config TARGET_IMX8MN_AB2
+	bool "imx8mn LPDDR4 Audio board 2.0"
+	select IMX8MN
+	select SUPPORT_SPL
+	select IMX8M_LPDDR4
+	select FSL_CAAM
+	select FSL_BLOB
+	select SPL_CRYPTO if SPL
+
+config TARGET_IMX8MN_DDR4_AB2
+	bool "imx8mn DDR4 Audio board 2.0"
+	select IMX8MN
+	select SUPPORT_SPL
+	select IMX8M_DDR4
+	select FSL_CAAM
+	select FSL_BLOB
+	select SPL_CRYPTO if SPL
+
+config TARGET_IMX8MN_DDR3L_AB2
+	bool "imx8mn DDR3L Audio board 2.0"
+	select IMX8MN
+	select SUPPORT_SPL
+	select IMX8M_DDR3L
+	select FSL_CAAM
+	select FSL_BLOB
+	select SPL_CRYPTO if SPL
 
 config TARGET_IMX8MN_VENICE
 	bool "Support Gateworks Venice iMX8M Nano module"
@@ -108,10 +233,23 @@ config TARGET_IMX8MN_VENICE
 
 config TARGET_IMX8MP_EVK
 	bool "imx8mp LPDDR4 EVK board"
-	select BINMAN
 	select IMX8MP
 	select SUPPORT_SPL
 	select IMX8M_LPDDR4
+	select FSL_CAAM
+	select FSL_BLOB
+	select ARCH_MISC_INIT
+	select SPL_CRYPTO if SPL
+
+config TARGET_IMX8MP_DDR4_EVK
+	bool "imx8mp DDR4 EVK board"
+	select IMX8MP
+	select SUPPORT_SPL
+	select IMX8M_DDR4
+	select FSL_CAAM
+	select FSL_BLOB
+	select ARCH_MISC_INIT
+	select SPL_CRYPTO if SPL
 
 config TARGET_PICO_IMX8MQ
 	bool "Support Technexion Pico iMX8MQ"
@@ -203,6 +341,16 @@ config TARGET_IMX8MP_RSB3720A1_6G
 	select IMX8MP
 	select SUPPORT_SPL
 	select IMX8M_LPDDR4
+	
+config TARGET_IMX8MM_MEZ
+	bool "Silmates iMX8M Mini SoM"
+	select IMX8MM
+	select SUPPORT_SPL
+	select IMX8M_LPDDR4
+	select FSL_CAAM
+	select FSL_BLOB
+	select SPL_CRYPTO if SPL
+
 endchoice
 
 source "board/advantech/imx8mp_rsb3720a1/Kconfig"
@@ -211,7 +359,10 @@ source "board/beacon/imx8mn/Kconfig"
 source "board/compulab/imx8mm-cl-iot-gate/Kconfig"
 source "board/engicam/imx8mm/Kconfig"
 source "board/freescale/imx8mq_evk/Kconfig"
+source "board/freescale/imx8mq_val/Kconfig"
+source "board/freescale/imx8mm_ab2/Kconfig"
 source "board/freescale/imx8mm_evk/Kconfig"
+source "board/freescale/imx8mm_val/Kconfig"
 source "board/freescale/imx8mn_evk/Kconfig"
 source "board/freescale/imx8mp_evk/Kconfig"
 source "board/gateworks/venice/Kconfig"
@@ -225,5 +376,6 @@ source "board/technexion/pico-imx8mq/Kconfig"
 source "board/variscite/imx8mn_var_som/Kconfig"
 source "board/toradex/verdin-imx8mm/Kconfig"
 source "board/toradex/verdin-imx8mp/Kconfig"
+source "board/silmates/imx8mm_mez/Kconfig"
 
 endif

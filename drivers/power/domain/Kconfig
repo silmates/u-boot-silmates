@@ -39,6 +39,12 @@ config IMX8M_POWER_DOMAIN
 	  Enable support for manipulating NXP i.MX8M on-SoC power domains via
 	  requests to the ATF.
 
+config IMX93_BLK_CTRL
+	bool "Enable i.MX93 block control driver"
+	depends on POWER_DOMAIN && ARCH_IMX9
+	help
+	  Enable support for manipulating NXP i.MX93 on-SoC block control driver
+
 config MTK_POWER_DOMAIN
 	bool "Enable the MediaTek power domain driver"
 	depends on POWER_DOMAIN && ARCH_MEDIATEK
@@ -67,6 +73,23 @@ config SANDBOX_POWER_DOMAIN
 	  Enable support for a test power domain driver implementation, which
 	  simply accepts requests to power on/off various HW modules without
 	  actually doing anything beyond a little error checking.
+
+config RESET_SCMI
+	bool "Enable SCMI reset domain driver"
+	select SCMI_FIRMWARE
+	help
+	  Enable this option if you want to support reset controller
+	  devices exposed by a SCMI agent based on SCMI reset domain
+	  protocol communication with a SCMI server.
+
+config SCMI_POWER_DOMAIN
+	bool "Enable the SCMI power domain driver"
+	depends on POWER_DOMAIN
+	select SCMI_FIRMWARE
+	help
+	  Enable this option if you want to support power domain controller
+	  devices exposed by a SCMI agent based on SCMI power domain
+	  protocol communication with a SCMI server.
 
 config TEGRA186_POWER_DOMAIN
 	bool "Enable Tegra186 BPMP-based power domain driver"

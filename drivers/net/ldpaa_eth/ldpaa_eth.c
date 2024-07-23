@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright 2014-2016 Freescale Semiconductor, Inc.
- * Copyright 2017 NXP
+ * Copyright 2017-2023 NXP
  */
 
 #include <common.h>
@@ -21,15 +21,16 @@
 #include <linux/compat.h>
 #include <linux/delay.h>
 #include <asm/global_data.h>
+#include <net/ldpaa_eth.h>
 #include "ldpaa_eth.h"
 
 #ifdef CONFIG_PHYLIB
 #ifdef CONFIG_DM_ETH
-static void init_phy(struct udevice *dev)
+static void init_phy(struct udevice *dev, int i)
 {
 	struct ldpaa_eth_priv *priv = dev_get_priv(dev);
 
-	priv->phy = dm_eth_phy_connect(dev);
+	priv->phy = dm_eth_phy_connect_index(dev, i);
 
 	if (!priv->phy)
 		return;
@@ -1101,19 +1102,22 @@ static int ldpaa_dpni_bind(struct ldpaa_eth_priv *priv)
 static int ldpaa_eth_probe(struct udevice *dev)
 {
 	struct ofnode_phandle_args phandle;
+	int i;
 
-	/* Nothing to do if there is no "phy-handle" in the DTS node */
-	if (dev_read_phandle_with_args(dev, "phy-handle", NULL,
-				       0, 0, &phandle)) {
-		return 0;
+	for (i = 0; i < WRIOP_MAX_PHY_NUM; i++) {
+		/* Nothing to do if there is no "phy-handle" in the DTS node */
+		if (dev_read_phandle_with_args(dev, "phy-handle", NULL,
+					       0, i, &phandle)) {
+			return 0;
+		}
+
+		init_phy(dev, i);
 	}
-
-	init_phy(dev);
 
 	return 0;
 }
 
-static uint32_t ldpaa_eth_get_dpmac_id(struct udevice *dev)
+uint32_t ldpaa_eth_get_dpmac_id(struct udevice *dev)
 {
 	int port_node = dev_of_offset(dev);
 
@@ -1168,7 +1172,10 @@ static int ldpaa_eth_of_to_plat(struct udevice *dev)
 
 	priv->dpmac_id = ldpaa_eth_get_dpmac_id(dev);
 	phy_mode_str = ldpaa_eth_get_phy_mode_str(dev);
-	priv->phy_mode = phy_get_interface_by_name(phy_mode_str);
+	if (phy_mode_str)
+		priv->phy_mode = phy_get_interface_by_name(phy_mode_str);
+	else
+		priv->phy_mode = PHY_INTERFACE_MODE_NONE;
 
 	return 0;
 }
@@ -1185,7 +1192,7 @@ static const struct udevice_id ldpaa_eth_of_ids[] = {
 };
 
 U_BOOT_DRIVER(ldpaa_eth) = {
-	.name = "ldpaa_eth",
+	.name = LDPAA_ETH_DRIVER_NAME,
 	.id = UCLASS_ETH,
 	.of_match = ldpaa_eth_of_ids,
 	.of_to_plat = ldpaa_eth_of_to_plat,

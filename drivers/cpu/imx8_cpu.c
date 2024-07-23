@@ -35,6 +35,8 @@ const char *get_imx8_type(u32 imxtype)
 		return "QXP";
 	case MXC_CPU_IMX8QM:
 		return "QM";
+	case MXC_CPU_IMX8DXL:
+		return "DXL";
 	default:
 		return "??";
 	}
@@ -49,6 +51,10 @@ const char *get_imx8_rev(u32 rev)
 		return "B";
 	case CHIP_REV_C:
 		return "C";
+	case CHIP_REV_A1:
+		return "A1";
+	case CHIP_REV_A2:
+		return "A2";
 	default:
 		return "?";
 	}
@@ -209,6 +215,7 @@ static int imx8_cpu_probe(struct udevice *dev)
 {
 	struct cpu_imx_plat *plat = dev_get_plat(dev);
 	u32 cpurev;
+	fdt_addr_t addr;
 
 	set_core_data(dev);
 	cpurev = get_cpu_rev();
@@ -216,11 +223,13 @@ static int imx8_cpu_probe(struct udevice *dev)
 	plat->rev = get_imx8_rev(cpurev & 0xFFF);
 	plat->type = get_imx8_type((cpurev & 0xFF000) >> 12);
 	plat->freq_mhz = imx8_get_cpu_rate(dev) / 1000000;
-	plat->mpidr = dev_read_addr(dev);
-	if (plat->mpidr == FDT_ADDR_T_NONE) {
+	addr = dev_read_addr(dev);
+	if (addr == FDT_ADDR_T_NONE) {
 		printf("%s: Failed to get CPU reg property\n", __func__);
 		return -EINVAL;
 	}
+
+	plat->mpidr = (u32)addr;
 
 	return 0;
 }

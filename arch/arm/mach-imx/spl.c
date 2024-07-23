@@ -20,12 +20,51 @@
 #include <asm/mach-imx/boot_mode.h>
 #include <g_dnl.h>
 #include <linux/libfdt.h>
+#include <mmc.h>
+#include <u-boot/lz4.h>
+#include <image.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
 __weak int spl_board_boot_device(enum boot_device boot_dev_spl)
 {
-	return 0;
+	switch (boot_dev_spl) {
+#if defined(CONFIG_MX7)
+	case SD1_BOOT:
+	case MMC1_BOOT:
+	case SD2_BOOT:
+	case MMC2_BOOT:
+	case SD3_BOOT:
+	case MMC3_BOOT:
+		return BOOT_DEVICE_MMC1;
+#elif defined(CONFIG_IMX8)
+	case MMC1_BOOT:
+		return BOOT_DEVICE_MMC1;
+	case SD2_BOOT:
+		return BOOT_DEVICE_MMC2_2;
+	case SD3_BOOT:
+		return BOOT_DEVICE_MMC1;
+	case FLEXSPI_BOOT:
+		return BOOT_DEVICE_SPI;
+#elif defined(CONFIG_IMX8M)
+	case SD1_BOOT:
+	case MMC1_BOOT:
+		return BOOT_DEVICE_MMC1;
+	case SD2_BOOT:
+	case MMC2_BOOT:
+		return BOOT_DEVICE_MMC2;
+#endif
+	case NAND_BOOT:
+		return BOOT_DEVICE_NAND;
+	case SPI_NOR_BOOT:
+		return BOOT_DEVICE_SPI;
+	case QSPI_BOOT:
+		return BOOT_DEVICE_NOR;
+	case USB_BOOT:
+		return BOOT_DEVICE_BOARD;
+	default:
+		return BOOT_DEVICE_NONE;
+	}
 }
 
 #if defined(CONFIG_MX6)
@@ -111,7 +150,7 @@ u32 spl_boot_device(void)
 	return BOOT_DEVICE_NONE;
 }
 
-#elif defined(CONFIG_MX7) || defined(CONFIG_IMX8M) || defined(CONFIG_IMX8)
+#elif defined(CONFIG_MX7) || defined(CONFIG_IMX8M) || defined(CONFIG_IMX8) || defined(CONFIG_IMX9)
 /* Translate iMX7/i.MX8M boot device to the SPL boot device enumeration */
 u32 spl_boot_device(void)
 {
@@ -140,54 +179,14 @@ u32 spl_boot_device(void)
 
 	enum boot_device boot_device_spl = get_boot_device();
 
-	if (IS_ENABLED(CONFIG_IMX8MM) || IS_ENABLED(CONFIG_IMX8MN) ||
-	    IS_ENABLED(CONFIG_IMX8MP))
-		return spl_board_boot_device(boot_device_spl);
-
-	switch (boot_device_spl) {
-#if defined(CONFIG_MX7)
-	case SD1_BOOT:
-	case MMC1_BOOT:
-	case SD2_BOOT:
-	case MMC2_BOOT:
-	case SD3_BOOT:
-	case MMC3_BOOT:
-		return BOOT_DEVICE_MMC1;
-#elif defined(CONFIG_IMX8)
-	case MMC1_BOOT:
-		return BOOT_DEVICE_MMC1;
-	case SD2_BOOT:
-		return BOOT_DEVICE_MMC2_2;
-	case SD3_BOOT:
-		return BOOT_DEVICE_MMC1;
-	case FLEXSPI_BOOT:
-		return BOOT_DEVICE_SPI;
-#elif defined(CONFIG_IMX8M)
-	case SD1_BOOT:
-	case MMC1_BOOT:
-		return BOOT_DEVICE_MMC1;
-	case SD2_BOOT:
-	case MMC2_BOOT:
-		return BOOT_DEVICE_MMC2;
-#endif
-	case NAND_BOOT:
-		return BOOT_DEVICE_NAND;
-	case SPI_NOR_BOOT:
-		return BOOT_DEVICE_SPI;
-	case QSPI_BOOT:
-		return BOOT_DEVICE_NOR;
-	case USB_BOOT:
-		return BOOT_DEVICE_USB;
-	default:
-		return BOOT_DEVICE_NONE;
-	}
+	return spl_board_boot_device(boot_device_spl);
 }
 #endif /* CONFIG_MX7 || CONFIG_IMX8M || CONFIG_IMX8 */
 
 #ifdef CONFIG_SPL_USB_GADGET
 int g_dnl_bind_fixup(struct usb_device_descriptor *dev, const char *name)
 {
-	put_unaligned(CONFIG_USB_GADGET_PRODUCT_NUM + 0xfff, &dev->idProduct);
+	put_unaligned(0x0151, &dev->idProduct);
 
 	return 0;
 }
@@ -322,16 +321,6 @@ ulong board_spl_fit_size_align(ulong size)
 	return size;
 }
 
-void board_spl_fit_post_load(const void *fit)
-{
-	u32 offset = ALIGN(fdt_totalsize(fit), 0x1000);
-
-	if (imx_hab_authenticate_image((uintptr_t)fit,
-				       offset + IVT_SIZE + CSF_PAD_SIZE,
-				       offset)) {
-		panic("spl: ERROR:  image authentication unsuccessful\n");
-	}
-}
 #endif
 
 void *board_spl_fit_buffer_addr(ulong fit_size, int sectors, int bl_len)
@@ -392,3 +381,152 @@ void *spl_load_simple_fit_fix_load(const void *fit)
 
 	return (void *)new;
 }
+
+#if defined(CONFIG_IMX8MP) || defined(CONFIG_IMX8MN)
+int board_handle_rdc_config(void *fdt_addr, const char *config_name, void *dst_addr)
+{
+	int node = -1, size = 0, ret = 0;
+	uint32_t *data = NULL;
+	const struct fdt_property *prop;
+
+	node = fdt_node_offset_by_compatible(fdt_addr, -1, "imx8m,mcu_rdc");
+	if (node < 0) {
+		printf("Failed to find node!, err: %d!\n", node);
+		ret = -1;
+		goto exit;
+	}
+
+	/*
+	 * Before MCU core starts we should set the rdc config for it,
+	 * then restore the rdc config after it stops.
+	 */
+	prop = fdt_getprop(fdt_addr, node, config_name, &size);
+	if (!prop) {
+		printf("Failed to find property %s!\n", config_name);
+		ret = -1;
+		goto exit;
+	}
+	if (!size || size % (5 * sizeof(uint32_t))) {
+		printf("Config size is wrong! size:%d\n", size);
+		ret = -1;
+		goto exit;
+	}
+	data = malloc(size);
+	if (fdtdec_get_int_array(fdt_addr, node, config_name,
+				 data, size/sizeof(int))) {
+		printf("Failed to parse rdc config!\n");
+		ret = -1;
+		goto exit;
+	} else {
+		/* copy the rdc config */
+		memcpy(dst_addr, data, size);
+		ret = 0;
+	}
+
+exit:
+	if (data)
+		free(data);
+
+	/* Invalidate the buffer if no valid config found. */
+	if (ret < 0)
+		memset(dst_addr, 0, sizeof(uint32_t));
+
+	return ret;
+}
+#endif
+
+#ifdef CONFIG_IMX_TRUSTY_OS
+#define TEE_DEST_SIZE     0x04000000
+#define TEE_SUBNODE_NAME "tee-1"
+#define TEE_RELOAD_OFFSET 0x00800000
+#define LZ4_MAGIC_NUM     0x184D2204
+#endif
+
+void board_spl_fit_post_load(const void *fit, struct spl_image_info *spl_image)
+{
+
+#ifdef CONFIG_IMX_TRUSTY_OS
+	int tee_node;
+	ulong load_addr;
+	int size;
+	void *offset_addr;
+	size_t dest_size;
+	int ret;
+#endif
+
+	if (IS_ENABLED(CONFIG_IMX_HAB) && !(spl_image->flags & SPL_FIT_BYPASS_POST_LOAD)) {
+		u32 offset = ALIGN(fdt_totalsize(fit), 0x1000);
+
+		if (imx_hab_authenticate_image((uintptr_t)fit,
+					       offset + IVT_SIZE + CSF_PAD_SIZE,
+					       offset)) {
+			panic("spl: ERROR:  image authentication unsuccessful\n");
+		}
+	}
+#if defined(CONFIG_IMX8MP) || defined(CONFIG_IMX8MN)
+#define MCU_RDC_MAGIC "mcu_rdc"
+	if (!(spl_image->flags & SPL_FIT_BYPASS_POST_LOAD)) {
+		memcpy((void *)CONFIG_IMX8M_MCU_RDC_START_CONFIG_ADDR, MCU_RDC_MAGIC, ALIGN(strlen(MCU_RDC_MAGIC), 4));
+		memcpy((void *)CONFIG_IMX8M_MCU_RDC_STOP_CONFIG_ADDR, MCU_RDC_MAGIC, ALIGN(strlen(MCU_RDC_MAGIC), 4));
+		board_handle_rdc_config(spl_image->fdt_addr, "start-config",
+					(void *)(CONFIG_IMX8M_MCU_RDC_START_CONFIG_ADDR + ALIGN(strlen(MCU_RDC_MAGIC), 4)));
+		board_handle_rdc_config(spl_image->fdt_addr, "stop-config",
+					(void *)(CONFIG_IMX8M_MCU_RDC_STOP_CONFIG_ADDR + ALIGN(strlen(MCU_RDC_MAGIC), 4)));
+	}
+#endif
+
+#ifdef CONFIG_IMX_TRUSTY_OS
+        if (!(spl_image->flags & SPL_FIT_BYPASS_POST_LOAD)) {
+                tee_node = fit_image_get_node(fit, TEE_SUBNODE_NAME);
+                if (tee_node < 0) {
+                        printf ("Can't find FIT subimage\n");
+                        return;
+                }
+
+                ret = fit_image_get_load(fit, tee_node, &load_addr);
+                if (ret) {
+                        printf("Can't get image load address!\n");
+                        return;
+                }
+
+                if (*(u32*)load_addr == LZ4_MAGIC_NUM) {
+                        offset_addr = (void *)load_addr + TEE_RELOAD_OFFSET;
+
+                        ret = fit_image_get_data_size(fit, tee_node, &size);
+                        if (ret < 0) {
+                                printf("Can't get size of image (err=%d)\n", ret);
+                                return;
+                        }
+
+                        memcpy(offset_addr,(void *)load_addr, size);
+
+                        dest_size = TEE_DEST_SIZE;
+                        ret = ulz4fn((void *)offset_addr, size, (void *)load_addr, &dest_size);
+                        if (ret) {
+                                printf("Uncompressed err :%d\n", ret);
+                                return;
+                        }
+#if CONFIG_IS_ENABLED(LOAD_FIT) || CONFIG_IS_ENABLED(LOAD_FIT_FULL)
+                        /* Modify the image size had recorded in FDT */
+                        fdt_setprop_u32(spl_image->fdt_addr, tee_node, "size", (u32)dest_size);
+#endif
+                }
+        }
+#endif
+
+}
+
+#ifdef CONFIG_IMX_TRUSTY_OS
+int check_rollback_index(struct spl_image_info *spl_image, struct mmc *mmc);
+int check_rpmb_blob(struct mmc *mmc);
+
+int mmc_image_load_late(struct spl_image_info *spl_image, struct mmc *mmc)
+{
+	/* Check the rollback index of next stage image */
+	if (check_rollback_index(spl_image, mmc) < 0)
+		return -1;
+
+	/* Check the rpmb key blob for trusty enabled platfrom. */
+	return check_rpmb_blob(mmc);
+}
+#endif

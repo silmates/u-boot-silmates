@@ -7,6 +7,7 @@
 #include <efi_loader.h>
 #include <env.h>
 #include <init.h>
+#include <micrel.h>
 #include <miiphy.h>
 #include <netdev.h>
 #include <asm/global_data.h>
@@ -131,31 +132,79 @@ static int setup_fec(void)
 	struct iomuxc_gpr_base_regs *gpr =
 		(struct iomuxc_gpr_base_regs *)IOMUXC_GPR_BASE_ADDR;
 
-	setup_iomux_fec();
+//	setup_iomux_fec();
 
 	/* Use 125M anatop REF_CLK1 for ENET1, not from external */
 	// clrsetbits_le32(&gpr->gpr[1], 0x2000, 0);
-	clrsetbits_le32(&gpr->gpr[1], IOMUXC_GPR_GPR1_GPR_ENET1_TX_CLK_SEL_SHIFT, 0);
-
+//	clrsetbits_le32(&gpr->gpr[1], IOMUXC_GPR_GPR1_GPR_ENET1_TX_CLK_SEL_SHIFT, 0);
+	clrsetbits_le32(&gpr->gpr[1],
+			IOMUXC_GPR_GPR1_GPR_ENET1_TX_CLK_SEL_MASK, 0);
+			
 	return set_clk_enet(ENET_125MHZ);
 //	return 0;
 }
 
 int board_phy_config(struct phy_device *phydev)
 {
+int tmp;
+
+	switch (ksz9xx1_phy_get_id(phydev) & MII_KSZ9x31_SILICON_REV_MASK) {
+	case PHY_ID_KSZ9031:
+		/*
+		 * The PHY adds 1.2ns for the RXC and 0ns for TXC clock by
+		 * default. The MAC and the layout don't add a skew between
+		 * clock and data.
+		 * Add 0.3ns for the RXC path and 0.96 + 0.42 ns (1.38 ns) for
+		 * the TXC path to get the required clock skews.
+		 */
+		/* control data pad skew - devaddr = 0x00, register = 0x04 */
+		ksz9031_phy_extended_write(phydev, 0x00,
+					   MII_KSZ9031_EXT_RGMII_CTRL_SIG_SKEW,
+					   MII_KSZ9031_MOD_DATA_NO_POST_INC,
+					   0x0070);
+		/* rx data pad skew - devaddr = 0x00, register = 0x05 */
+		ksz9031_phy_extended_write(phydev, 0x00,
+					   MII_KSZ9031_EXT_RGMII_RX_DATA_SKEW,
+					   MII_KSZ9031_MOD_DATA_NO_POST_INC,
+					   0x7777);
+		/* tx data pad skew - devaddr = 0x00, register = 0x06 */
+		ksz9031_phy_extended_write(phydev, 0x00,
+					   MII_KSZ9031_EXT_RGMII_TX_DATA_SKEW,
+					   MII_KSZ9031_MOD_DATA_NO_POST_INC,
+					   0x0000);
+		/* gtx and rx clock pad skew - devaddr = 0x00,register = 0x08 */
+		ksz9031_phy_extended_write(phydev, 0x00,
+					   MII_KSZ9031_EXT_RGMII_CLOCK_SKEW,
+					   MII_KSZ9031_MOD_DATA_NO_POST_INC,
+					   0x03f4);
+		break;
+	case PHY_ID_KSZ9131:
+	default:
+		/* read rxc dll control - devaddr = 0x00, register = 0x4c */
+		tmp = ksz9031_phy_extended_read(phydev, 0x00,
+					MII_KSZ9131_EXT_RGMII_2NS_SKEW_RXDLL,
+					MII_KSZ9031_MOD_DATA_NO_POST_INC);
+		/* disable rxdll bypass (enable 2ns skew delay on RXC) */
+		tmp &= ~MII_KSZ9131_RXTXDLL_BYPASS;
+		/* rxc data pad skew 2ns - devaddr = 0x00, register = 0x4c */
+		tmp = ksz9031_phy_extended_write(phydev, 0x00,
+					MII_KSZ9131_EXT_RGMII_2NS_SKEW_RXDLL,
+					MII_KSZ9031_MOD_DATA_NO_POST_INC, tmp);
+		/* read txc dll control - devaddr = 0x00, register = 0x4d */
+		tmp = ksz9031_phy_extended_read(phydev, 0x00,
+					MII_KSZ9131_EXT_RGMII_2NS_SKEW_TXDLL,
+					MII_KSZ9031_MOD_DATA_NO_POST_INC);
+		/* disable txdll bypass (enable 2ns skew delay on TXC) */
+		tmp &= ~MII_KSZ9131_RXTXDLL_BYPASS;
+		/* rxc data pad skew 2ns - devaddr = 0x00, register = 0x4d */
+		tmp = ksz9031_phy_extended_write(phydev, 0x00,
+					MII_KSZ9131_EXT_RGMII_2NS_SKEW_TXDLL,
+					MII_KSZ9031_MOD_DATA_NO_POST_INC, tmp);
+		break;
+	}
+
 	if (phydev->drv->config)
 		phydev->drv->config(phydev);
-
-#ifndef CONFIG_DM_ETH
-	/* enable rgmii rxc skew and phy mode select to RGMII copper */
-	phy_write(phydev, MDIO_DEVAD_NONE, 0x1d, 0x1f);
-	phy_write(phydev, MDIO_DEVAD_NONE, 0x1e, 0x8);
-
-	phy_write(phydev, MDIO_DEVAD_NONE, 0x1d, 0x00);
-	phy_write(phydev, MDIO_DEVAD_NONE, 0x1e, 0x82ee);
-	phy_write(phydev, MDIO_DEVAD_NONE, 0x1d, 0x05);
-	phy_write(phydev, MDIO_DEVAD_NONE, 0x1e, 0x100);
-#endif
 
 	return 0;
 }
@@ -425,6 +474,21 @@ int board_init(void)
 
 	if (IS_ENABLED(CONFIG_FEC_MXC))
 		setup_fec();
+
+	unsigned char ethaddr[6] = {0};
+//	if (!eth_env_get_enetaddr("ethaddr", ethaddr)) {
+		ethaddr[0] = 0x00;
+		ethaddr[1] = 0x04;
+		ethaddr[2] = 0xa3;
+		ethaddr[3] = 0x0b;
+		ethaddr[4] = 0x01;
+		ethaddr[5] = 0x33;
+		
+//		printf("Updating ethaddr..\n");
+//		eth_env_set_enetaddr("ethaddr", ethaddr);
+		if (!env_get("ethaddr"))
+			env_set("ethaddr", ethaddr);
+//	}
 
 	arm_smccc_smc(IMX_SIP_GPC, IMX_SIP_GPC_PM_DOMAIN,
 		      DISPMIX, true, 0, 0, 0, 0, &res);

@@ -51,7 +51,8 @@
 /* ENET1 */
 #if defined(CONFIG_FEC_MXC)
 #define CONFIG_ETHPRIME                 "FEC"
-#define PHY_ANEG_TIMEOUT 20000
+//#define PHY_ANEG_TIMEOUT 20000
+#define FEC_QUIRK_ENET_MAC
 
 #define CONFIG_FEC_XCV_TYPE             RGMII
 #define CONFIG_FEC_MXC_PHYADDR          0
@@ -263,5 +264,15 @@
 #ifdef CONFIG_ANDROID_SUPPORT
 #include "imx8mm_mez_android.h"
 #endif
+
+
+//#define CONFIG_ID_EEPROM
+//#define CONFIG_I2C_EEPROM
+//#define CONFIG_SYS_EEPROM_BUS_NUM 	0
+//#define CONFIG_SYS_I2C_EEPROM_ADDR 	0x50
+//#define CONFIG_SYS_I2C_EEPROM_ADDR_LEN	1
+//#define CONFIG_SYS_EEPROM_PAGE_WRITE_DELAY_MS	5
+#define CONFIG_SYS_I2C_EEPROM_NXID
+
 
 #endif

@@ -350,6 +350,10 @@ config TARGET_IMX8MM_MEZ
 	select FSL_CAAM
 	select FSL_BLOB
 	select SPL_CRYPTO if SPL
+ 	select MISC
+ 	select I2C_EEPROM
+	select DM_ETH_PHY
+	select NVMEM
 
 endchoice
 

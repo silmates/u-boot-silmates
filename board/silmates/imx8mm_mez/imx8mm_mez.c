@@ -20,7 +20,6 @@
 #include <asm/mach-imx/mxc_i2c.h>
 #include <i2c.h>
 #include <asm/io.h>
-#include "../common/tcpc.h"
 #include <usb.h>
 #include <imx_sip.h>
 #include <linux/arm-smccc.h>
@@ -63,6 +62,13 @@ static iomux_v3_cfg_t const gpmi_pads[] = {
 	IMX8MM_PAD_NAND_WP_B_RAWNAND_WP_B | MUX_PAD_CTRL(NAND_PAD_CTRL),
 };
 #endif
+
+
+/* This should be defined for each board */
+int mmc_map_to_kernel_blk(int dev_no)
+{
+	return dev_no;
+}
 
 static void setup_gpmi_nand(void)
 {
@@ -132,16 +138,11 @@ static int setup_fec(void)
 	struct iomuxc_gpr_base_regs *gpr =
 		(struct iomuxc_gpr_base_regs *)IOMUXC_GPR_BASE_ADDR;
 
-//	setup_iomux_fec();
-
 	/* Use 125M anatop REF_CLK1 for ENET1, not from external */
-	// clrsetbits_le32(&gpr->gpr[1], 0x2000, 0);
-//	clrsetbits_le32(&gpr->gpr[1], IOMUXC_GPR_GPR1_GPR_ENET1_TX_CLK_SEL_SHIFT, 0);
 	clrsetbits_le32(&gpr->gpr[1],
 			IOMUXC_GPR_GPR1_GPR_ENET1_TX_CLK_SEL_MASK, 0);
 			
 	return set_clk_enet(ENET_125MHZ);
-//	return 0;
 }
 
 int board_phy_config(struct phy_device *phydev)
@@ -309,9 +310,9 @@ int board_init(void)
 
 int board_late_init(void)
 {
-#ifdef CONFIG_ENV_IS_IN_MMC
-	board_late_mmc_env_init();
-#endif
+//#ifdef CONFIG_ENV_IS_IN_MMC
+//	board_late_mmc_env_init();
+//#endif
 
 	if (IS_ENABLED(CONFIG_ENV_VARS_UBOOT_RUNTIME_CONFIG)) {
 		env_set("board_name", "MEZ");

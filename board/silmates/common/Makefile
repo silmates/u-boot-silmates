@@ -18,8 +18,15 @@ else
 
 obj-$(CONFIG_DEEP_SLEEP)		+= arm_sleep.o
 
+ifndef CONFIG_SPL_BUILD
+obj-$(CONFIG_SM_CFG_BLOCK) += sm-config.o
+obj-$(CONFIG_SM_CFG_BLOCK) += sm-common.o
+obj-$(CONFIG_SM_CFG_BLOCK) += sm-eeprom.o
+obj-$(CONFIG_SM_CFG_BLOCK) += i2c_common.o
+endif
+
 #ifneq (,$(filter $(SOC), mx25 mx31 mx35 mx5 mx6 mx7 mx7ulp imx8 imx8m vf610 imx8ulp imx9))
-#obj-y				+= mmc.o
+obj-y				+= mmc.o
 #endif
 
 ifdef CONFIG_NXP_ESBC

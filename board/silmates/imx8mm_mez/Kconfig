@@ -9,6 +9,43 @@ config SYS_VENDOR
 config SYS_CONFIG_NAME
 	default "imx8mm_mez"
 
+config SM_CFG_BLOCK
+	default y
+
+config SM_CFG_BLOCK_EXTRA
+	default n
+
+config SM_HAVE_MMC
+	default y
+
+config SM_HAVE_EEPROM_EXTRA
+	default n
+
+config SM_CFG_BLOCK_DEV
+	default "0"
+
+config SM_CFG_BLOCK_PART
+	default "1"
+
+config SM_CFG_BLOCK_USB_GADGET_PID
+	default n
+
+config SM_CFG_BLOCK_IS_IN_MMC
+	default n
+
+config SM_CFG_BLOCK_IS_IN_NAND
+	default n
+
+config SM_CFG_BLOCK_IS_IN_NOR
+	default n
+
+config SM_CFG_BLOCK_IS_IN_EEPROM
+	default y
+
+# Silmates config block in eMMC, at the end of 1st "boot sector"
+config SM_CFG_BLOCK_OFFSET
+	default "-512"
+
 config IMX_CONFIG
 	default "board/silmates/imx8mm_mez/imximage-8mm.cfg"
 

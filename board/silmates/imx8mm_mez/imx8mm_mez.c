@@ -39,6 +39,8 @@ static iomux_v3_cfg_t const wdog_pads[] = {
 	IMX8MM_PAD_GPIO1_IO02_WDOG1_WDOG_B  | MUX_PAD_CTRL(WDOG_PAD_CTRL),
 };
 
+#define I2C_PMIC	0
+
 #ifdef CONFIG_NAND_MXS
 #ifdef CONFIG_SPL_BUILD
 #define NAND_PAD_CTRL	(PAD_CTL_DSE6 | PAD_CTL_FSEL2 | PAD_CTL_HYS)
@@ -63,12 +65,6 @@ static iomux_v3_cfg_t const gpmi_pads[] = {
 };
 #endif
 
-
-/* This should be defined for each board */
-int mmc_map_to_kernel_blk(int dev_no)
-{
-	return dev_no;
-}
 
 static void setup_gpmi_nand(void)
 {
@@ -275,6 +271,45 @@ int board_ehci_usb_phy_mode(struct udevice *dev)
 }
 
 
+
+#if defined(CONFIG_OF_LIBFDT) && defined(CONFIG_OF_BOARD_SETUP)
+int ft_board_setup(void *blob, struct bd_info *bd)
+{
+//	const char *canoscpath = "/oscillator";
+//	int freq = 40000000;	/* 40 MHz is used on most variants */
+//	int canoscoff, ret;
+	int ret;
+
+//	canoscoff = fdt_path_offset(blob, canoscpath);
+//	if (canoscoff < 0)	/* No CAN oscillator found. */
+//		goto exit;
+
+	/*
+	 * The following "prodid" (PID4 in Toradex naming) use
+	 * a 20MHz CAN oscillator:
+	 * - 0055, V1.1A, V1.1B, V1.1C and V1.1D
+	 * - 0059, V1.1A and V1.1B
+	 */
+//	if ((sm_hw_tag.ver_major == 1 && sm_hw_tag.ver_minor == 1) &&
+//	    ((sm_hw_tag.prodid == VERDIN_IMX8MMQ_IT &&
+//	      sm_hw_tag.ver_assembly <= 1) ||	/* 0059 rev. A or B */
+//	     (sm_hw_tag.prodid == VERDIN_IMX8MMQ_WIFI_BT_IT &&
+//	      sm_hw_tag.ver_assembly <= 3))) {	/* 0055 rev. A/B/C/D */
+//		freq = 20000000;
+//	}
+
+//	ret = fdt_setprop_u32(blob, canoscoff, "clock-frequency", freq);
+//	if (ret < 0) {
+//		printf("Failed to set CAN oscillator clock-frequency, ret=%d\n",
+//		       ret);
+//	}
+
+exit:
+	return ft_common_board_setup(blob, bd);
+}
+#endif
+
+
 #define DISPMIX				9
 #define MIPI				10
 
@@ -284,21 +319,6 @@ int board_init(void)
 
 	if (IS_ENABLED(CONFIG_FEC_MXC))
 		setup_fec();
-
-	unsigned char ethaddr[6] = {0};
-//	if (!eth_env_get_enetaddr("ethaddr", ethaddr)) {
-		ethaddr[0] = 0x00;
-		ethaddr[1] = 0x04;
-		ethaddr[2] = 0xa3;
-		ethaddr[3] = 0x0b;
-		ethaddr[4] = 0x01;
-		ethaddr[5] = 0x33;
-		
-//		printf("Updating ethaddr..\n");
-//		eth_env_set_enetaddr("ethaddr", ethaddr);
-		if (!env_get("ethaddr"))
-			env_set("ethaddr", ethaddr);
-//	}
 
 	arm_smccc_smc(IMX_SIP_GPC, IMX_SIP_GPC_PM_DOMAIN,
 		      DISPMIX, true, 0, 0, 0, 0, &res);
@@ -322,6 +342,16 @@ int board_late_init(void)
 	return 0;
 }
 
+int board_phys_sdram_size(phys_size_t *size)
+{
+	if (!size)
+		return -EINVAL;
+
+	*size = get_ram_size((void *)PHYS_SDRAM, PHYS_SDRAM_SIZE);
+
+	return 0;
+}
+
 #ifdef CONFIG_ANDROID_SUPPORT
 bool is_power_key_pressed(void) {
 	return (bool)(!!(readl(SNVS_HPSR) & (0x1 << 6)));
@@ -336,3 +366,5 @@ int is_recovery_key_pressing(void)
 }
 #endif /* CONFIG_ANDROID_RECOVERY */
 #endif /* CONFIG_FSL_FASTBOOT */
+
+

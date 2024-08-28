@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright 2019 NXP
+ * Copyright 2024 Silmates
  */
 
 #ifndef __IMX8MM_MEZ_H

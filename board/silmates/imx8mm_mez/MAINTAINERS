@@ -1,6 +1,9 @@
-SM-i.MX8MN BOARD
+SM-i.MX8MM BOARD
 M:	Jigar Patel <jigar@silmates.com>
 S:	Maintained
-F:	board/silmates/imx8mm-mez/
+F:	board/silmates/imx8mm_mez/
 F:	include/configs/imx8mm_mez.h
 F:	configs/sm_imx8mm_mez_defconfig
+F:	arch/arm/dts/imx8mm-mez.dtsi
+F:	arch/arm/dts/imx8mm-mez.dts
+F:	arch/arm/dts/imx8mm-mez-u-boot.dtsi

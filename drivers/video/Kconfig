@@ -1081,4 +1081,13 @@ config VIDEO_ADV7535
 	Say Y here if you want to enable support for ADI ADV7535
 	DSI to HDMI connector, currently only support 1920x1080.
 
+config VIDEO_LT9711
+	bool "LT9711 MIPI DSI to DP connector"
+	depends on DM_VIDEO
+	select VIDEO_MIPI_DSI
+	default n
+	help
+	Say Y here if you want to enable support for Lontium LT9711
+	DSI to HDMI connector, currently only support 1920x1080.
+
 endmenu

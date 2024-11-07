@@ -134,11 +134,9 @@ static int lt9711_probe(struct udevice *dev)
 	struct lt9711_priv *priv = dev_get_priv(dev);
 	int ret;
 
-	debug("%s\n", __func__);
-
 	priv->format = MIPI_DSI_FMT_RGB888;
 	priv->mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_SYNC_PULSE |
-			  MIPI_DSI_MODE_EOT_PACKET | MIPI_DSI_MODE_VIDEO_HSE,
+				MIPI_DSI_MODE_VIDEO_HSE;
 
 	priv->addr  = dev_read_addr(dev);
 	if (priv->addr  == 0){

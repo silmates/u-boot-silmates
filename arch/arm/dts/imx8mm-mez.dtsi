@@ -48,7 +48,7 @@
 	};
 
 	rm67199_panel {
-		compatible = "ilitek,ili9881c";
+		compatible = "boe,nt156whm_n44";
 		pinctrl-names = "default";
 		pinctrl-0 = <&pinctrl_mipi_en>;
 		reset-gpio = <&gpio3 21 GPIO_ACTIVE_LOW>;
@@ -57,8 +57,8 @@
 					 * 1: non-burst mode with sync event
 					 * 2: non-burst mode with sync pulse
 					 */
-		panel-width-mm = <135>;
-		panel-height-mm = <216>;
+		panel-width-mm = <344>;
+		panel-height-mm = <193>;
 		status = "okay";
 
 		port {
@@ -357,12 +357,10 @@
 
 /* uSD Card */
 &usdhc2 {
-/*	assigned-clocks = <&clk IMX8MM_CLK_USDHC2>;
-	assigned-clock-rates = <200000000>;*/
-	pinctrl-names = "default", "state_100mhz", "state_200mhz";
+	assigned-clocks = <&clk IMX8MM_CLK_USDHC2>;
+	assigned-clock-rates = <200000000>;
+	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_usdhc2>, <&pinctrl_usdhc2_gpio>;
-	pinctrl-1 = <&pinctrl_usdhc2_100mhz>, <&pinctrl_usdhc2_gpio>;
-	pinctrl-2 = <&pinctrl_usdhc2_200mhz>, <&pinctrl_usdhc2_gpio>;
 	cd-gpios = <&gpio2 12 GPIO_ACTIVE_LOW>;
 	bus-width = <4>;
 	vmmc-supply = <&reg_usdhc2_vmmc>;
@@ -404,13 +402,6 @@
 };
 
 &iomuxc {
-
-	/* uSD Card Card detect */
-	pinctrl_usdhc2_gpio: usdhc2grpgpiogrp {
-		fsl,pins = <
-			MX8MM_IOMUXC_SD2_CD_B_GPIO2_IO12	0x1c4
-		>;
-	};
 
 	pinctrl_usbotg1: usbotg1grp {
 		fsl,pins = <
@@ -520,6 +511,13 @@
 		fsl,pins = <
 			MX8MM_IOMUXC_UART4_RXD_UART4_DCE_RX	0x140
 			MX8MM_IOMUXC_UART4_TXD_UART4_DCE_TX	0x140
+		>;
+	};
+
+	/* uSD Card Card detect */
+	pinctrl_usdhc2_gpio: usdhc2grpgpiogrp {
+		fsl,pins = <
+			MX8MM_IOMUXC_SD2_CD_B_GPIO2_IO12	0x1c4
 		>;
 	};
 

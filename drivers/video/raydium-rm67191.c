@@ -26,8 +26,18 @@ struct rm67191_panel_priv {
 	unsigned long mode_flags;
 };
 
+
+enum panel_type {
+	PANEL_TYPE_RM671171=1,
+	PANEL_TYPE_RM671199,
+	PANEL_TYPE_ILI9881C,
+	PANEL_TYPE_NT156WHM_N44,
+};
+
 struct rad_platform_data {
 	int (*enable)(struct udevice *dev);
+	const struct display_timing * timing;
+	enum panel_type type;
 };
 
 /* Manufacturer Command Set pages (CMD2) */
@@ -444,8 +454,8 @@ static const struct ili9881c_instr ts101wxu_nwo_init[] = {
 	ILI9881C_SWITCH_PAGE_INSTR(0),
 };
 
-/*
-static const struct display_timing default_timing = {
+
+static const struct display_timing rm67199_default_timing = {
 	.pixelclock.typ		= 121000000,
 	.hactive.typ		= 1080,
 	.hfront_porch.typ	= 20,
@@ -460,9 +470,9 @@ static const struct display_timing default_timing = {
 		 DISPLAY_FLAGS_DE_LOW |
 		 DISPLAY_FLAGS_PIXDATA_NEGEDGE,
 };
-*/
 
-static const struct display_timing default_timing = {
+
+static const struct display_timing ili9881c_default_timing = {
 	.pixelclock.typ		= 74000000,//148500000,
 	.hactive.typ		= 800,
 	.hfront_porch.typ	= 60,
@@ -479,8 +489,7 @@ static const struct display_timing default_timing = {
 };
 
 
-/*
-static const struct display_timing default_timing = {
+static const struct display_timing nt156whm_n44_default_timing = {
 	.pixelclock.typ		= 76300000,//148500000,
 	.hactive.typ		= 1366,
 	.hfront_porch.typ	= 48,
@@ -495,8 +504,6 @@ static const struct display_timing default_timing = {
 		 DISPLAY_FLAGS_DE_LOW |
 		 DISPLAY_FLAGS_PIXDATA_NEGEDGE,
 };
-*/
-
 
 static u8 color_format_from_dsi_format(enum mipi_dsi_pixel_format format)
 {
@@ -591,7 +598,6 @@ static int rm67191_enable(struct udevice *dev)
 		printf("Failed to set pixel format (%d)\n", ret);
 		return -EIO;
 	}
-
 
 	/* Set display brightness */
 	brightness = 255; /* Max brightness */
@@ -736,6 +742,24 @@ static int ili9881c_send_cmd_data(struct mipi_dsi_device *dsi, u8 cmd, u8 data)
 	return 0;
 }
 
+static int nt156whm_n44_enable(struct udevice *dev)
+{
+	struct mipi_dsi_panel_plat *plat = dev_get_plat(dev);
+	struct mipi_dsi_device *dsi = plat->device;
+/*	struct rm67191_panel_priv *priv = dev_get_priv(dev);
+	u8 color_format = color_format_from_dsi_format(priv->format);
+	u16 brightness;
+	int ret;
+*/
+	dsi->mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_SYNC_PULSE;
+//	dsi->mode_flags = MIPI_DSI_MODE_VIDEO_HSE | MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_SYNC_PULSE;
+//	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
+
+	mdelay(120);
+	mdelay(100);
+	return 0;
+}
+
 static int ili9881c_enable(struct udevice *dev)
 {
 	struct rm67191_panel_priv *priv = dev_get_priv(dev);
@@ -842,10 +866,11 @@ static int rm67191_panel_get_display_timing(struct udevice *dev,
 					    struct display_timing *timings)
 {
 	struct mipi_dsi_panel_plat *plat = dev_get_plat(dev);
+	struct rad_platform_data *data = (struct rad_platform_data *)dev_get_driver_data(dev);
 	struct mipi_dsi_device *device = plat->device;
 	struct rm67191_panel_priv *priv = dev_get_priv(dev);
 
-	memcpy(timings, &default_timing, sizeof(*timings));
+	memcpy(timings, data->timing, sizeof(*timings));
 
 	/* fill characteristics of DSI data link */
 	if (device) {
@@ -929,20 +954,33 @@ static const struct panel_ops rm67191_panel_ops = {
 
 static const struct rad_platform_data rad_rm67191 = {
 	.enable = &rm67191_enable,
+	.timing = &rm67199_default_timing,
+	.type = PANEL_TYPE_RM671171,
 };
 
 static const struct rad_platform_data rad_rm67199 = {
 	.enable = &rm67199_enable,
+	.timing = &rm67199_default_timing,
+	.type = PANEL_TYPE_RM671199,
 };
 
 static const struct rad_platform_data ili_ili9881c = {
 	.enable = &ili9881c_enable,
+	.timing = &ili9881c_default_timing,
+	.type = PANEL_TYPE_ILI9881C,
+};
+
+static const struct rad_platform_data boe_nt156whm_n44 = {
+	.enable = &nt156whm_n44_enable,
+	.timing = &nt156whm_n44_default_timing,
+	.type = PANEL_TYPE_NT156WHM_N44,
 };
 
 static const struct udevice_id rm67191_panel_ids[] = {
 	{ .compatible = "raydium,rm67191", .data = (ulong)&rad_rm67191 },
 	{ .compatible = "raydium,rm67199", .data = (ulong)&rad_rm67199 },
 	{ .compatible = "ilitek,ili9881c", .data = (ulong)&ili_ili9881c },
+	{ .compatible = "boe,nt156whm_n44", .data = (ulong)&boe_nt156whm_n44 },
 	{ }
 };
 

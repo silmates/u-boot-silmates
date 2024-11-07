@@ -11,7 +11,8 @@ obj-y += spl.o
 ifdef CONFIG_IMX8M_4G_LPDDR4
 obj-y += lpddr4_timing_4g.o
 else
-obj-$(CONFIG_IMX8M_LPDDR4) += lpddr4_timing.o
+obj-$(CONFIG_IMX8M_LPDDR4) += lpddr4_timing_16_1500_3set.o
+#obj-$(CONFIG_IMX8M_LPDDR4) += lpddr4_timing_32_1500_3set.o
 obj-$(CONFIG_IMX8M_DDR4) += ddr4_timing.o
 endif
 endif

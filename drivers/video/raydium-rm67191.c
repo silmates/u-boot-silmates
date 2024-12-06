@@ -490,19 +490,21 @@ static const struct display_timing ili9881c_default_timing = {
 
 
 static const struct display_timing nt156whm_n44_default_timing = {
-	.pixelclock.typ		= 76300000,//148500000,
+	.pixelclock.typ		= 76500000,//148500000,
 	.hactive.typ		= 1366,
 	.hfront_porch.typ	= 48,
 	.hback_porch.typ	= 146,
 	.hsync_len.typ		= 32,
 	.vactive.typ		= 768,
 	.vfront_porch.typ	= 3,
-	.vback_porch.typ	= 15,
+	.vback_porch.typ	= 21,//15,
 	.vsync_len.typ		= 6,
 	.flags = DISPLAY_FLAGS_HSYNC_LOW |
-		 DISPLAY_FLAGS_VSYNC_LOW |
+		 DISPLAY_FLAGS_VSYNC_LOW,
+/*		  |
 		 DISPLAY_FLAGS_DE_LOW |
 		 DISPLAY_FLAGS_PIXDATA_NEGEDGE,
+*/
 };
 
 static u8 color_format_from_dsi_format(enum mipi_dsi_pixel_format format)
@@ -755,8 +757,9 @@ static int nt156whm_n44_enable(struct udevice *dev)
 //	dsi->mode_flags = MIPI_DSI_MODE_VIDEO_HSE | MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_SYNC_PULSE;
 //	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 
-	mdelay(120);
-	mdelay(100);
+	mdelay(10);
+//	mdelay(120);
+//	mdelay(100);
 	return 0;
 }
 

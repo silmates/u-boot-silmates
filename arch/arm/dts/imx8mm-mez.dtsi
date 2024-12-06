@@ -49,6 +49,13 @@
 
 	rm67199_panel {
 		compatible = "boe,nt156whm_n44";
+		panel-width-mm = <344>;
+		panel-height-mm = <193>;
+/*
+		compatible = "ilitek,ili9881c";
+		panel-width-mm = <216>;
+		panel-height-mm = <135>;
+*/
 		pinctrl-names = "default";
 		pinctrl-0 = <&pinctrl_mipi_en>;
 		reset-gpio = <&gpio3 21 GPIO_ACTIVE_LOW>;
@@ -57,8 +64,6 @@
 					 * 1: non-burst mode with sync event
 					 * 2: non-burst mode with sync pulse
 					 */
-		panel-width-mm = <344>;
-		panel-height-mm = <193>;
 		status = "okay";
 
 		port {

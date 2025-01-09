@@ -47,6 +47,7 @@
 #define CONFIG_FASTBOOT_USB_DEV 	0
 
 #define CONFIG_REMAKE_ELF
+
 /* ENET Config */
 /* ENET1 */
 #if defined(CONFIG_FEC_MXC)
@@ -55,10 +56,16 @@
 #define FEC_QUIRK_ENET_MAC
 
 #define CONFIG_FEC_XCV_TYPE             RGMII
-#define CONFIG_FEC_MXC_PHYADDR          0
-
+#define CONFIG_FEC_MXC_PHYADDR          -1
 #define IMX_FEC_BASE			0x30BE0000
+
+#define CONFIG_IPADDR			192.168.29.2
+#define CONFIG_NETMASK			255.255.255.0
+#define CONFIG_SERVERIP			192.168.29.1
+
 #endif
+
+
 
 #ifdef CONFIG_NAND_BOOT
 #define MFG_NAND_PARTITION "mtdparts=gpmi-nand:64m(nandboot),16m(nandfit),32m(nandkernel),16m(nanddtb),8m(nandtee),-(nandrootfs)"
@@ -193,6 +200,23 @@
 			   "fi; " \
 		   "fi; " \
 	   "fi;"
+	   
+
+#ifdef CONFIG_BOOTCOMMAND
+#undef CONFIG_BOOTCOMMAND
+#endif
+
+ #define CONFIG_BOOTCOMMAND \
+ 	   "mmc dev ${mmcdev}; if mmc rescan; then " \
+		   "if run loadbootscript; then " \
+			   "run bootscript; " \
+		   "else " \
+ 			   "if run loadimage; then " \
+ 				   "run mmcboot; " \
+			   "else run netboot; " \
+ 			   "fi; " \
+		   "fi; " \
+ 	   "else booti ${loadaddr} - ${fdt_addr}; fi"
 #endif
 
 /* Link Definitions */
@@ -205,11 +229,15 @@
 	(CONFIG_SYS_INIT_RAM_ADDR + CONFIG_SYS_INIT_SP_OFFSET)
 
 #define CONFIG_SYS_MMC_ENV_DEV		2   /* USDHC2 */
+#ifdef CONFIG_SYS_MMC_ENV_PART
+#undef CONFIG_SYS_MMC_ENV_PART
+#endif
+#define CONFIG_SYS_MMC_ENV_PART		0   /* 0=user area, 1=1st MMC boot part., 2=2nd MMC boot part. */
 #define CONFIG_MMCROOT			"/dev/mmcblk2p2"  /* USDHC2 */
 
 #define CONFIG_SYS_SDRAM_BASE           0x40000000
 #define PHYS_SDRAM                      0x40000000
-#define PHYS_SDRAM_SIZE					0x20000000 /* 512 MB */ // 0x80000000 /* 2GB DDR */
+#define PHYS_SDRAM_SIZE			0x20000000 /* 512 MB */ // 0x80000000 /* 2GB DDR */
 
 #define CONFIG_MXC_UART_BASE		UART4_BASE_ADDR
 

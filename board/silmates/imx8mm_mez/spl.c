@@ -109,8 +109,7 @@ static iomux_v3_cfg_t const usdhc2_pads[] = {
 };
 
 /*
- * The evk board uses DAT3 to detect CD card plugin,
- * in u-boot we mux the pin to GPIO when doing board_mmc_getcd.
+ * The MEZ board uses CD to detect SD card plugin
  */
 static iomux_v3_cfg_t const usdhc2_cd_pad =
 	IMX8MM_PAD_SD2_CD_B_GPIO2_IO12 | MUX_PAD_CTRL(USDHC_GPIO_PAD_CTRL);
@@ -181,17 +180,16 @@ int board_mmc_getcd(struct mmc *mmc)
 		gpio_direction_input(USDHC2_CD_GPIO);
 
 		/*
-		 * Since it is the DAT3 pin, this pin is pulled to
+		 * Since it is the CD pin, this pin is pulled to
 		 * low voltage if no card
 		 */
 		ret = gpio_get_value(USDHC2_CD_GPIO);
-
-		// imx_iomux_v3_setup_pad(usdhc2_dat3_pad);
 		return ret;
 	}
 
 	return 1;
 }
+
 
 //#if CONFIG_IS_ENABLED(POWER_LEGACY)
 #ifndef CONFIG_DM_PMIC

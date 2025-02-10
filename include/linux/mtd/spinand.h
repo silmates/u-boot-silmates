@@ -33,8 +33,21 @@
 		   SPI_MEM_OP_NO_DUMMY,					\
 		   SPI_MEM_OP_NO_DATA)
 
+#define SPINAND_RESET_OP_OCTAL_DTR					\
+	SPI_MEM_OP(SPI_MEM_OP_EXT_CMD(2, 0xffff, 8, SPI_MEM_OP_DTR),	\
+		   SPI_MEM_OP_NO_ADDR,					\
+		   SPI_MEM_OP_NO_DUMMY,					\
+		   SPI_MEM_OP_NO_DATA)
+
 #define SPINAND_WR_EN_DIS_OP(enable)					\
 	SPI_MEM_OP(SPI_MEM_OP_CMD((enable) ? 0x06 : 0x04, 1),		\
+		   SPI_MEM_OP_NO_ADDR,					\
+		   SPI_MEM_OP_NO_DUMMY,					\
+		   SPI_MEM_OP_NO_DATA)
+
+#define SPINAND_WR_EN_DIS_OP_OCTAL_DTR(enable)				\
+	SPI_MEM_OP(SPI_MEM_OP_EXT_CMD(2, (enable) ? 0x0606 : 0x0404, 8,	\
+				      SPI_MEM_OP_DTR),			\
 		   SPI_MEM_OP_NO_ADDR,					\
 		   SPI_MEM_OP_NO_DUMMY,					\
 		   SPI_MEM_OP_NO_DATA)
@@ -51,11 +64,23 @@
 		   SPI_MEM_OP_NO_DUMMY,					\
 		   SPI_MEM_OP_DATA_OUT(1, valptr, 1))
 
+#define SPINAND_SET_FEATURE_OP_OCTAL_DTR(reg, valptr)			\
+	SPI_MEM_OP(SPI_MEM_OP_EXT_CMD(2, 0x1f1f, 8, SPI_MEM_OP_DTR),	\
+		   SPI_MEM_OP_ADDR(2, reg, 8, SPI_MEM_OP_DTR),		\
+		   SPI_MEM_OP_NO_DUMMY,					\
+		   SPI_MEM_OP_DATA_OUT(2, valptr, 8, SPI_MEM_OP_DTR))
+
 #define SPINAND_GET_FEATURE_OP(reg, valptr)				\
 	SPI_MEM_OP(SPI_MEM_OP_CMD(0x0f, 1),				\
 		   SPI_MEM_OP_ADDR(1, reg, 1),				\
 		   SPI_MEM_OP_NO_DUMMY,					\
 		   SPI_MEM_OP_DATA_IN(1, valptr, 1))
+
+#define SPINAND_GET_FEATURE_OP_OCTAL_DTR(reg, valptr)			\
+	SPI_MEM_OP(SPI_MEM_OP_EXT_CMD(2, 0x0f0f, 8, SPI_MEM_OP_DTR),	\
+		   SPI_MEM_OP_ADDR(2, reg, 8, SPI_MEM_OP_DTR),		\
+		   SPI_MEM_OP_DUMMY(14, 8, SPI_MEM_OP_DTR),		\
+		   SPI_MEM_OP_DATA_IN(2, valptr, 8, SPI_MEM_OP_DTR))
 
 #define SPINAND_BLK_ERASE_OP(addr)					\
 	SPI_MEM_OP(SPI_MEM_OP_CMD(0xd8, 1),				\
@@ -63,9 +88,21 @@
 		   SPI_MEM_OP_NO_DUMMY,					\
 		   SPI_MEM_OP_NO_DATA)
 
+#define SPINAND_BLK_ERASE_OP_OCTAL_DTR(addr)				\
+	SPI_MEM_OP(SPI_MEM_OP_EXT_CMD(2, 0xd8d8, 8, SPI_MEM_OP_DTR),	\
+		   SPI_MEM_OP_ADDR(2, addr, 8, SPI_MEM_OP_DTR),		\
+		   SPI_MEM_OP_NO_DUMMY,					\
+		   SPI_MEM_OP_NO_DATA)
+
 #define SPINAND_PAGE_READ_OP(addr)					\
 	SPI_MEM_OP(SPI_MEM_OP_CMD(0x13, 1),				\
 		   SPI_MEM_OP_ADDR(3, addr, 1),				\
+		   SPI_MEM_OP_NO_DUMMY,					\
+		   SPI_MEM_OP_NO_DATA)
+
+#define SPINAND_PAGE_READ_OP_OCTAL_DTR(addr)				\
+	SPI_MEM_OP(SPI_MEM_OP_EXT_CMD(2, 0x1313, 8, SPI_MEM_OP_DTR),	\
+		   SPI_MEM_OP_ADDR(2, addr, 8, SPI_MEM_OP_DTR),		\
 		   SPI_MEM_OP_NO_DUMMY,					\
 		   SPI_MEM_OP_NO_DATA)
 
@@ -99,9 +136,21 @@
 		   SPI_MEM_OP_DUMMY(ndummy, 4),				\
 		   SPI_MEM_OP_DATA_IN(len, buf, 4))
 
+#define SPINAND_PAGE_READ_FROM_CACHE_OCTALIO_DTR_OP(addr, ndummy, buf, len) \
+	SPI_MEM_OP(SPI_MEM_OP_EXT_CMD(2, 0x9d9d, 8, SPI_MEM_OP_DTR),	\
+		   SPI_MEM_OP_ADDR(2, addr, 8, SPI_MEM_OP_DTR),		\
+		   SPI_MEM_OP_DUMMY(ndummy, 8, SPI_MEM_OP_DTR),		\
+		   SPI_MEM_OP_DATA_IN(len, buf, 8, SPI_MEM_OP_DTR))
+
 #define SPINAND_PROG_EXEC_OP(addr)					\
 	SPI_MEM_OP(SPI_MEM_OP_CMD(0x10, 1),				\
 		   SPI_MEM_OP_ADDR(3, addr, 1),				\
+		   SPI_MEM_OP_NO_DUMMY,					\
+		   SPI_MEM_OP_NO_DATA)
+
+#define SPINAND_PROG_EXEC_OP_OCTAL_DTR(addr)				\
+	SPI_MEM_OP(SPI_MEM_OP_EXT_CMD(2, 0x1010, 8, SPI_MEM_OP_DTR),	\
+		   SPI_MEM_OP_ADDR(2, addr, 8, SPI_MEM_OP_DTR),		\
 		   SPI_MEM_OP_NO_DUMMY,					\
 		   SPI_MEM_OP_NO_DATA)
 
@@ -111,11 +160,30 @@
 		   SPI_MEM_OP_NO_DUMMY,					\
 		   SPI_MEM_OP_DATA_OUT(len, buf, 1))
 
+#define SPINAND_PROG_LOAD_OCTALIO_DTR(reset, addr, buf, len)		\
+	SPI_MEM_OP(SPI_MEM_OP_EXT_CMD(2, reset ? 0x0202 : 0x8484, 8,	\
+				      SPI_MEM_OP_DTR),			\
+		   SPI_MEM_OP_ADDR(2, addr, 8, SPI_MEM_OP_DTR),		\
+		   SPI_MEM_OP_NO_DUMMY,					\
+		   SPI_MEM_OP_DATA_OUT(len, buf, 8, SPI_MEM_OP_DTR))
+
 #define SPINAND_PROG_LOAD_X4(reset, addr, buf, len)			\
 	SPI_MEM_OP(SPI_MEM_OP_CMD(reset ? 0x32 : 0x34, 1),		\
 		   SPI_MEM_OP_ADDR(2, addr, 1),				\
 		   SPI_MEM_OP_NO_DUMMY,					\
 		   SPI_MEM_OP_DATA_OUT(len, buf, 4))
+
+/**
+ * enum spinand_protocol - List of SPI protocols to denote the op protocol and
+ *			   SPI NAND flash IO modes.
+ */
+enum spinand_protocol {
+	SPINAND_1S,
+	SPINAND_2S,
+	SPINAND_4S,
+	SPINAND_8S,
+	SPINAND_8D,
+};
 
 /**
  * Standard SPI NAND flash commands
@@ -177,6 +245,7 @@ struct spinand_id {
  *	    that properties of the NAND chip (spinand->base.memorg and
  *	    spinand->base.eccreq) have been filled
  * @init: initialize a SPI NAND device
+ * @change_protocol: switch the SPI NAND flash to a specific SPI protocol
  * @cleanup: cleanup a SPI NAND device
  *
  * Each SPI NAND manufacturer driver should implement this interface so that
@@ -185,6 +254,8 @@ struct spinand_id {
 struct spinand_manufacturer_ops {
 	int (*detect)(struct spinand_device *spinand);
 	int (*init)(struct spinand_device *spinand);
+	int (*change_protocol)(struct spinand_device *spinand,
+			       const enum spinand_protocol protocol);
 	void (*cleanup)(struct spinand_device *spinand);
 };
 
@@ -229,6 +300,46 @@ struct spinand_op_variants {
 		.nops = sizeof((struct spi_mem_op[]){ __VA_ARGS__ }) /	\
 			sizeof(struct spi_mem_op),			\
 	}
+struct spinand_ctrl_ops {
+	const struct {
+		struct spi_mem_op reset;
+		struct spi_mem_op get_feature;
+		struct spi_mem_op set_feature;
+		struct spi_mem_op write_enable;
+		struct spi_mem_op block_erase;
+		struct spi_mem_op page_read;
+		struct spi_mem_op program_execute;
+	} ops;
+	const enum spinand_protocol protocol;
+};
+
+#define SPINAND_CTRL_OPS(__protocol, __reset, __get_feature, __set_feature,	\
+			 __write_enable, __block_erase, __page_read,		\
+			 __program_execute)					\
+	{									\
+		.ops = {							\
+			.reset = __reset,					\
+			.get_feature = __get_feature,				\
+			.set_feature = __set_feature,				\
+			.write_enable = __write_enable,				\
+			.block_erase = __block_erase,				\
+			.page_read = __page_read,				\
+			.program_execute = __program_execute,			\
+		},								\
+		.protocol = __protocol,						\
+	}
+
+struct spinand_ctrl_ops_variants {
+	const struct spinand_ctrl_ops *ctrl_ops_list;
+	unsigned int nvariants;
+};
+
+#define SPINAND_CTRL_OPS_VARIANTS(name, ...)					\
+	const struct spinand_ctrl_ops_variants name = {				\
+		.ctrl_ops_list = (struct spinand_ctrl_ops[]){ __VA_ARGS__ },	\
+		.nvariants = sizeof((struct spinand_ctrl_ops[]){ __VA_ARGS__ })/\
+			     sizeof(struct spinand_ctrl_ops),			\
+	}
 
 /**
  * spinand_ecc_info - description of the on-die ECC implemented by a SPI NAND
@@ -247,6 +358,7 @@ struct spinand_ecc_info {
 
 #define SPINAND_HAS_QE_BIT		BIT(0)
 #define SPINAND_HAS_CR_FEAT_BIT		BIT(1)
+#define SPINAND_HAS_OCTAL_DTR_BIT	BIT(2)
 
 /**
  * struct spinand_info - Structure used to describe SPI NAND chips
@@ -256,10 +368,10 @@ struct spinand_ecc_info {
  * @memorg: memory organization
  * @eccreq: ECC requirements
  * @eccinfo: on-die ECC info
- * @op_variants: operations variants
- * @op_variants.read_cache: variants of the read-cache operation
- * @op_variants.write_cache: variants of the write-cache operation
- * @op_variants.update_cache: variants of the update-cache operation
+ * @data_ops_variants: operations variants for page read/writes
+ * @data_ops_variants.read_cache: variants of the read-cache operation
+ * @data_ops_variants.write_cache: variants of the write-cache operation
+ * @data_ops_variants.update_cache: variants of the update-cache operation
  * @select_target: function used to select a target/die. Required only for
  *		   multi-die chips
  *
@@ -277,7 +389,9 @@ struct spinand_info {
 		const struct spinand_op_variants *read_cache;
 		const struct spinand_op_variants *write_cache;
 		const struct spinand_op_variants *update_cache;
-	} op_variants;
+	} data_ops_variants;
+
+	const struct spinand_ctrl_ops_variants *ctrl_ops_variants;
 	int (*select_target)(struct spinand_device *spinand,
 			     unsigned int target);
 };
@@ -289,6 +403,9 @@ struct spinand_info {
 		.update_cache = __update,				\
 	}
 
+#define SPINAND_INFO_CTRL_OPS_VARIANTS(__ctrl_ops_variants)		\
+	.ctrl_ops_variants = __ctrl_ops_variants
+
 #define SPINAND_ECCINFO(__ooblayout, __get_status)			\
 	.eccinfo = {							\
 		.ooblayout = __ooblayout,				\
@@ -298,14 +415,14 @@ struct spinand_info {
 #define SPINAND_SELECT_TARGET(__func)					\
 	.select_target = __func,
 
-#define SPINAND_INFO(__model, __id, __memorg, __eccreq, __op_variants,	\
-		     __flags, ...)					\
+#define SPINAND_INFO(__model, __id, __memorg, __eccreq,			\
+		     __data_ops_variants, __flags, ...)			\
 	{								\
 		.model = __model,					\
 		.devid = __id,						\
 		.memorg = __memorg,					\
 		.eccreq = __eccreq,					\
-		.op_variants = __op_variants,				\
+		.data_ops_variants = __data_ops_variants,		\
 		.flags = __flags,					\
 		__VA_ARGS__						\
 	}
@@ -317,15 +434,19 @@ struct spinand_info {
  * @lock: lock used to serialize accesses to the NAND
  * @id: NAND ID as returned by READ_ID
  * @flags: NAND flags
- * @op_templates: various SPI mem op templates
- * @op_templates.read_cache: read cache op template
- * @op_templates.write_cache: write cache op template
- * @op_templates.update_cache: update cache op template
+ * @data_ops: various SPI mem op templates for reading and writing on pages
+ * @data_ops.read_cache: read cache op template
+ * @data_ops.write_cache: write cache op template
+ * @data_ops.update_cache: update cache op template
+ * @ctrl_ops: various SPI mem op templates for handling the flash device, i.e.
+ *	      non page-read/write ops.
  * @select_target: select a specific target/die. Usually called before sending
  *		   a command addressing a page or an eraseblock embedded in
  *		   this die. Only required if your chip exposes several dies
  * @cur_target: currently selected target/die
  * @eccinfo: on-die ECC information
+ * @protocol: SPI IO protocol in operation. Update on successful transition into
+ *	      a different SPI IO protocol.
  * @cfg_cache: config register cache. One entry per die
  * @databuf: bounce buffer for data
  * @oobbuf: bounce buffer for OOB data
@@ -334,6 +455,8 @@ struct spinand_info {
  *		passed in spi_mem_op be DMA-able, so we can't based the bufs on
  *		the stack
  * @manufacturer: SPI NAND manufacturer information
+ * @desc_entry: pointer to device description entry in the manufacturer's
+ *		spinand_info tables
  * @priv: manufacturer private data
  */
 struct spinand_device {
@@ -351,7 +474,9 @@ struct spinand_device {
 		const struct spi_mem_op *read_cache;
 		const struct spi_mem_op *write_cache;
 		const struct spi_mem_op *update_cache;
-	} op_templates;
+	} data_ops;
+
+	const struct spinand_ctrl_ops *ctrl_ops;
 
 	int (*select_target)(struct spinand_device *spinand,
 			     unsigned int target);
@@ -359,11 +484,14 @@ struct spinand_device {
 
 	struct spinand_ecc_info eccinfo;
 
+	enum spinand_protocol protocol;
+
 	u8 *cfg_cache;
 	u8 *databuf;
 	u8 *oobbuf;
 	u8 *scratchbuf;
 	const struct spinand_manufacturer *manufacturer;
+	const struct spinand_info *desc_entry;
 	void *priv;
 };
 
@@ -446,5 +574,6 @@ int spinand_match_and_init(struct spinand_device *dev,
 
 int spinand_upd_cfg(struct spinand_device *spinand, u8 mask, u8 val);
 int spinand_select_target(struct spinand_device *spinand, unsigned int target);
+int spinand_write_enable_op(struct spinand_device *spinand);
 
 #endif /* __LINUX_MTD_SPINAND_H */

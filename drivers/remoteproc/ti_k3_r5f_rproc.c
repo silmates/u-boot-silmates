@@ -21,6 +21,7 @@
 #include <linux/kernel.h>
 #include <linux/soc/ti/ti_sci_protocol.h>
 #include "ti_sci_proc.h"
+#include <mach/security.h>
 
 /*
  * R5F's view of this address can either be for ATCM or BTCM with the other
@@ -40,9 +41,12 @@
 #define PROC_BOOT_CFG_FLAG_GEN_IGN_BOOTVECTOR		0x10000000
 /* Available from J7200 SoCs onwards */
 #define PROC_BOOT_CFG_FLAG_R5_MEM_INIT_DIS		0x00004000
+#define PROC_BOOT_CFG_FLAG_R5_SINGLE_CORE		0x00008000
+
 
 /* R5 TI-SCI Processor Control Flags */
 #define PROC_BOOT_CTRL_FLAG_R5_CORE_HALT		0x00000001
+#define PROC_BOOT_CTRL_FLAG_R5_LPSC			0x00000002
 
 /* R5 TI-SCI Processor Status Flags */
 #define PROC_BOOT_STATUS_FLAG_R5_WFE			0x00000001
@@ -55,6 +59,8 @@
 enum cluster_mode {
 	CLUSTER_MODE_SPLIT = 0,
 	CLUSTER_MODE_LOCKSTEP,
+	CLUSTER_MODE_SINGLECPU,
+	CLUSTER_MODE_SINGLECORE,
 };
 
 /**
@@ -65,6 +71,8 @@ enum cluster_mode {
 struct k3_r5f_ip_data {
 	bool tcm_is_double;
 	bool tcm_ecc_autoinit;
+	bool is_single_core;
+	bool is_dm_core;
 };
 
 /**
@@ -203,19 +211,28 @@ static int k3_r5f_split_release(struct k3_r5f_core *core)
 
 	dev_dbg(core->dev, "%s\n", __func__);
 
-	ret = ti_sci_proc_power_domain_on(&core->tsp);
-	if (ret) {
-		dev_err(core->dev, "module-reset deassert failed, ret = %d\n",
-			ret);
-		return ret;
-	}
+	if (core->ipdata->is_dm_core) {
+		ret = ti_sci_proc_set_control(&core->tsp,
+					      PROC_BOOT_CTRL_FLAG_R5_LPSC, 0);
+		if (ret) {
+			dev_err(core->dev, "LPSC on failed, ret = %d\n", ret);
+			return ret;
+		}
+	} else {
+		ret = ti_sci_proc_power_domain_on(&core->tsp);
+		if (ret) {
+			dev_err(core->dev, "module-reset deassert failed, ret = %d\n",
+				ret);
+			return ret;
+		}
 
-	ret = reset_deassert(&core->reset);
-	if (ret) {
-		dev_err(core->dev, "local-reset deassert failed, ret = %d\n",
-			ret);
-		if (ti_sci_proc_power_domain_off(&core->tsp))
-			dev_warn(core->dev, "module-reset assert back failed\n");
+		ret = reset_deassert(&core->reset);
+		if (ret) {
+			dev_err(core->dev, "local-reset deassert failed, ret = %d\n",
+				ret);
+			if (ti_sci_proc_power_domain_off(&core->tsp))
+				dev_warn(core->dev, "module-reset assert back failed\n");
+		}
 	}
 
 	return ret;
@@ -302,6 +319,7 @@ static int k3_r5f_load(struct udevice *dev, ulong addr, ulong size)
 	u64 boot_vector;
 	u32 ctrl, sts, cfg = 0;
 	bool mem_auto_init;
+	void *image_addr = (void *)addr;
 	int ret;
 
 	dev_dbg(dev, "%s addr = 0x%lx, size = 0x%lx\n", __func__, addr, size);
@@ -328,6 +346,8 @@ static int k3_r5f_load(struct udevice *dev, ulong addr, ulong size)
 	}
 
 	k3_r5f_init_tcm_memories(core, mem_auto_init);
+
+	ti_secure_image_post_process(&image_addr, &size);
 
 	ret = rproc_elf_load_image(dev, addr, size);
 	if (ret < 0) {
@@ -434,15 +454,24 @@ proc_release:
 
 static int k3_r5f_split_reset(struct k3_r5f_core *core)
 {
-	int ret;
+	int ret = 0;
 
 	dev_dbg(core->dev, "%s\n", __func__);
 
-	if (reset_assert(&core->reset))
-		ret = -EINVAL;
+	if (core->ipdata->is_dm_core) {
+		ret = ti_sci_proc_set_control(&core->tsp, 0,
+					      PROC_BOOT_CTRL_FLAG_R5_LPSC);
+		if (ret) {
+			dev_err(core->dev, "LPSC off failed, ret = %d\n", ret);
+			return ret;
+		}
+	} else {
+		if (reset_assert(&core->reset))
+			ret = -EINVAL;
 
-	if (ti_sci_proc_power_domain_off(&core->tsp))
-		ret = -EINVAL;
+		if (ti_sci_proc_power_domain_off(&core->tsp))
+			ret = -EINVAL;
+	}
 
 	return ret;
 }
@@ -599,8 +628,10 @@ static int k3_r5f_rproc_configure(struct k3_r5f_core *core)
 	/* Sanity check for Lockstep mode */
 	lockstep_permitted = !!(sts &
 				PROC_BOOT_STATUS_FLAG_R5_LOCKSTEP_PERMITTED);
-	if (cluster->mode && is_primary_core(core) && !lockstep_permitted) {
-		dev_err(core->dev, "LockStep mode not permitted on this device\n");
+	if (cluster->mode == CLUSTER_MODE_LOCKSTEP && is_primary_core(core) &&
+	    !lockstep_permitted) {
+		dev_err(core->dev, "LockStep mode not permitted on this \
+			device\n");
 		ret = -EINVAL;
 		goto out;
 	}
@@ -614,6 +645,9 @@ static int k3_r5f_rproc_configure(struct k3_r5f_core *core)
 		else if (lockstep_permitted)
 			clr_cfg |= PROC_BOOT_CFG_FLAG_R5_LOCKSTEP;
 	}
+
+	if (core->ipdata->is_single_core)
+		set_cfg = PROC_BOOT_CFG_FLAG_R5_SINGLE_CORE;
 
 	if (core->atcm_enable)
 		set_cfg |= PROC_BOOT_CFG_FLAG_R5_ATCM_EN;
@@ -817,9 +851,27 @@ static int k3_r5f_probe(struct udevice *dev)
 			return ret;
 
 		if (core->in_use) {
-			dev_info(dev, "Core %d is already in use. No rproc commands work\n",
-				 core->tsp.proc_id);
-			return 0;
+			/*
+			 * If MCU R5F is booted in split mode by ROM code, core0
+			 * will run DM firmware and second core sits in WFI.
+			 * Shut it down so that it can be probed as split core.
+			 */
+			if (core->ipdata->is_dm_core && !is_primary_core(core) &&
+			    core->cluster->mode == CLUSTER_MODE_SPLIT) {
+				if (!strstr(core->tsp.sci->version.firmware_description,
+					    "v09.02.04"))
+					dev_warn(dev, "IPC on MCU R5F Core 1 requires SYSFW version: v09.02.04, detected version: %s\n",
+						 core->tsp.sci->version.firmware_description);
+				else {
+					dev_dbg(dev, "Core %d is in WFI mode, resetting core to use in split-mode.\n",
+						core->tsp.proc_id);
+					k3_r5f_stop(core->dev);
+				}
+			} else {
+				dev_info(dev, "Core %d is already in use. No rproc commands work\n",
+					 core->tsp.proc_id);
+				return 0;
+			}
 		}
 
 		/* Make sure Local reset is asserted. Redundant? */
@@ -853,17 +905,48 @@ static int k3_r5f_remove(struct udevice *dev)
 static const struct k3_r5f_ip_data k3_data = {
 	.tcm_is_double = false,
 	.tcm_ecc_autoinit = false,
+	.is_single_core = false,
+	.is_dm_core = false,
 };
 
-static const struct k3_r5f_ip_data j7200_data = {
+static const struct k3_r5f_ip_data j7200_j721s2_data = {
 	.tcm_is_double = true,
 	.tcm_ecc_autoinit = true,
+	.is_single_core = false,
+	.is_dm_core = false,
+};
+
+static const struct k3_r5f_ip_data am62_data = {
+	.tcm_is_double = false,
+	.tcm_ecc_autoinit = false,
+	.is_single_core = true,
+	.is_dm_core = false,
+};
+
+static const struct k3_r5f_ip_data k3_mcu_data = {
+	.tcm_is_double = false,
+	.tcm_ecc_autoinit = false,
+	.is_single_core = false,
+	.is_dm_core = true,
+};
+
+static const struct k3_r5f_ip_data j7200_mcu_data = {
+	.tcm_is_double = true,
+	.tcm_ecc_autoinit = true,
+	.is_single_core = false,
+	.is_dm_core = true,
 };
 
 static const struct udevice_id k3_r5f_rproc_ids[] = {
 	{ .compatible = "ti,am654-r5f", .data = (ulong)&k3_data, },
 	{ .compatible = "ti,j721e-r5f", .data = (ulong)&k3_data, },
-	{ .compatible = "ti,j7200-r5f", .data = (ulong)&j7200_data, },
+	{ .compatible = "ti,j721e-mcu-r5f", .data = (ulong)&k3_mcu_data, },
+	{ .compatible = "ti,j7200-r5f", .data = (ulong)&j7200_j721s2_data, },
+	{ .compatible = "ti,j7200-mcu-r5f", .data = (ulong)&j7200_mcu_data, },
+	{ .compatible = "ti,j721s2-r5f", .data = (ulong)&j7200_j721s2_data, },
+	{ .compatible = "ti,j721s2-mcu-r5f", .data = (ulong)&j7200_mcu_data, },
+	{ .compatible = "ti,am62-r5f", .data = (ulong)&am62_data, },
+	{ .compatible = "ti,am64-r5f", .data = (ulong)&j7200_j721s2_data, },
 	{}
 };
 
@@ -886,6 +969,11 @@ static int k3_r5f_cluster_probe(struct udevice *dev)
 	cluster->mode = dev_read_u32_default(dev, "ti,cluster-mode",
 					     CLUSTER_MODE_LOCKSTEP);
 
+	if (device_is_compatible(dev, "ti,am62-r5fss")) {
+		cluster->mode = CLUSTER_MODE_SINGLECORE;
+		return 0;
+	}
+
 	if (device_get_child_count(dev) != 2) {
 		dev_err(dev, "Invalid number of R5 cores");
 		return -EINVAL;
@@ -901,6 +989,9 @@ static const struct udevice_id k3_r5fss_ids[] = {
 	{ .compatible = "ti,am654-r5fss"},
 	{ .compatible = "ti,j721e-r5fss"},
 	{ .compatible = "ti,j7200-r5fss"},
+	{ .compatible = "ti,j721s2-r5fss"},
+	{ .compatible = "ti,am62-r5fss"},
+	{ .compatible = "ti,am64-r5fss"},
 	{}
 };
 

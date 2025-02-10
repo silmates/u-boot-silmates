@@ -350,23 +350,38 @@ static int spansion_write_any_reg(struct spi_nor *nor, u32 addr, u8 val)
 }
 #endif
 
-static ssize_t spi_nor_read_data(struct spi_nor *nor, loff_t from, size_t len,
-				 u_char *buf)
+/*
+ * Return a template of the spi-mem op for performing a read operation.
+ * The caller is expected to fill in the address, the data length, and
+ * the data buffer.
+ */
+static struct spi_mem_op spi_nor_read_op(struct spi_nor *nor)
 {
 	struct spi_mem_op op =
 			SPI_MEM_OP(SPI_MEM_OP_CMD(nor->read_opcode, 0),
-				   SPI_MEM_OP_ADDR(nor->addr_width, from, 0),
+				   SPI_MEM_OP_ADDR(nor->addr_width, 0, 0),
 				   SPI_MEM_OP_DUMMY(nor->read_dummy, 0),
-				   SPI_MEM_OP_DATA_IN(len, buf, 0));
-	size_t remaining = len;
-	int ret;
-
+				   SPI_MEM_OP_DATA_IN(1, NULL, 0));
 	spi_nor_setup_op(nor, &op, nor->read_proto);
 
 	/* convert the dummy cycles to the number of bytes */
 	op.dummy.nbytes = (nor->read_dummy * op.dummy.buswidth) / 8;
 	if (spi_nor_protocol_is_dtr(nor->read_proto))
 		op.dummy.nbytes *= 2;
+
+	return op;
+}
+
+static ssize_t spi_nor_read_data(struct spi_nor *nor, loff_t from, size_t len,
+				 u_char *buf)
+{
+	struct spi_mem_op op = spi_nor_read_op(nor);
+	size_t remaining = len;
+	int ret;
+
+	op.addr.val = from;
+	op.data.nbytes = len;
+	op.data.buf.in = buf;
 
 	while (remaining) {
 		op.data.nbytes = remaining < UINT_MAX ? remaining : UINT_MAX;
@@ -1745,11 +1760,62 @@ static int spi_nor_write(struct mtd_info *mtd, loff_t to, size_t len,
 		if (ret < 0)
 			return ret;
 #endif
+
 		write_enable(nor);
-		ret = nor->write(nor, addr, page_remain, buf + i);
-		if (ret < 0)
-			goto write_err;
-		written = ret;
+
+		/*
+		 * On DTR capable flashes like Micron Xcella the writes cannot
+		 * start or end at an odd address in DTR mode. So we need to
+		 * append or prepend extra 0xff bytes to make sure the start
+		 * address and end address are even.
+		 */
+		if (spi_nor_protocol_is_dtr(nor->write_proto) &&
+		    ((addr | page_remain) & 1)) {
+			u_char *tmp;
+			size_t extra_bytes = 0;
+
+			tmp = kmalloc(nor->page_size, 0);
+			if (!tmp) {
+				ret = -ENOMEM;
+				goto write_err;
+			}
+
+			/* Prepend a 0xff byte if the start address is odd. */
+			if (addr & 1) {
+				tmp[0] = 0xff;
+				memcpy(tmp + 1, buf + i, page_remain);
+				addr--;
+				page_remain++;
+				extra_bytes++;
+			} else {
+				memcpy(tmp, buf + i, page_remain);
+			}
+
+			/* Append a 0xff byte if the end address is odd. */
+			if ((addr + page_remain) & 1) {
+				tmp[page_remain + extra_bytes] = 0xff;
+				extra_bytes++;
+				page_remain++;
+			}
+
+			ret = nor->write(nor, addr, page_remain, tmp);
+
+			kfree(tmp);
+
+			if (ret < 0)
+				goto write_err;
+
+			/*
+			 * We write extra bytes but they are not part of the
+			 * original write.
+			 */
+			written = ret - extra_bytes;
+		} else {
+			ret = nor->write(nor, addr, page_remain, buf + i);
+			if (ret < 0)
+				goto write_err;
+			written = ret;
+		}
 
 		ret = spi_nor_wait_till_ready(nor);
 		if (ret)
@@ -2053,6 +2119,36 @@ read_err:
 	return ret;
 }
 
+/**
+ * spi_nor_read_sfdp_dma_unsafe() - read Serial Flash Discoverable Parameters.
+ * @nor:	pointer to a 'struct spi_nor'
+ * @addr:	offset in the SFDP area to start reading data from
+ * @len:	number of bytes to read
+ * @buf:	buffer where the SFDP data are copied into
+ *
+ * Wrap spi_nor_read_sfdp() using a kmalloc'ed bounce buffer as @buf is now not
+ * guaranteed to be dma-safe.
+ *
+ * Return: -ENOMEM if kmalloc() fails, the return code of spi_nor_read_sfdp()
+ *          otherwise.
+ */
+static int spi_nor_read_sfdp_dma_unsafe(struct spi_nor *nor, u32 addr,
+					size_t len, void *buf)
+{
+	void *dma_safe_buf;
+	int ret;
+
+	dma_safe_buf = kmalloc(len, GFP_KERNEL);
+	if (!dma_safe_buf)
+		return -ENOMEM;
+
+	ret = spi_nor_read_sfdp(nor, addr, len, dma_safe_buf);
+	memcpy(buf, dma_safe_buf, len);
+	kfree(dma_safe_buf);
+
+	return ret;
+}
+
 /* Fast Read settings. */
 
 static void
@@ -2226,7 +2322,7 @@ static int spi_nor_parse_bfpt(struct spi_nor *nor,
 		    bfpt_header->length * sizeof(u32));
 	addr = SFDP_PARAM_HEADER_PTP(bfpt_header);
 	memset(&bfpt, 0, sizeof(bfpt));
-	err = spi_nor_read_sfdp(nor,  addr, len, &bfpt);
+	err = spi_nor_read_sfdp_dma_unsafe(nor, addr, len, &bfpt);
 	if (err < 0)
 		return err;
 
@@ -2552,7 +2648,7 @@ static int spi_nor_parse_sfdp(struct spi_nor *nor,
 	int i, err;
 
 	/* Get the SFDP header. */
-	err = spi_nor_read_sfdp(nor, 0, sizeof(header), &header);
+	err = spi_nor_read_sfdp_dma_unsafe(nor, 0, sizeof(header), &header);
 	if (err < 0)
 		return err;
 
@@ -3632,6 +3728,12 @@ static void mt35xu512aba_post_sfdp_fixup(struct spi_nor *nor,
 	params->rdsr_addr_nbytes = 0;
 
 	/*
+	 * SCCR Map 22nd DWORD does not indicate DTR Octal Mode Enable
+	 * for MT35XU512ABA but is actually supported by device.
+	 */
+	nor->flags |= SNOR_F_IO_MODE_EN_VOLATILE;
+
+	/*
 	 * The BFPT quad enable field is set to a reserved value so the quad
 	 * enable function is ignored by spi_nor_parse_bfpt(). Make sure we
 	 * disable it.
@@ -3915,6 +4017,7 @@ int spi_nor_scan(struct spi_nor *nor)
 	const struct flash_info *info = NULL;
 	struct mtd_info *mtd = &nor->mtd;
 	struct spi_slave *spi = nor->spi;
+	struct spi_mem_op op;
 	int ret;
 	int cfi_mtd_nb = 0;
 
@@ -4086,6 +4189,9 @@ int spi_nor_scan(struct spi_nor *nor)
 	nor->size = mtd->size;
 	nor->erase_size = mtd->erasesize;
 	nor->sector_size = mtd->erasesize;
+
+	op = spi_nor_read_op(nor);
+	spi_mem_do_calibration(nor->spi, &op);
 
 #ifndef CONFIG_SPL_BUILD
 	printf("SF: Detected %s with page size ", nor->name);

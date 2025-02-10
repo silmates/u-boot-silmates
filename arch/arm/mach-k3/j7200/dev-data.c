@@ -3,9 +3,9 @@
  * J7200 specific device platform data
  *
  * This file is auto generated. Please do not hand edit and report any issues
- * to Dave Gerlach <d-gerlach@ti.com>.
+ * to Bryan Brattlof <bb@ti.com>.
  *
- * Copyright (C) 2020-2021 Texas Instruments Incorporated - https://www.ti.com/
+ * Copyright (C) 2020-2022 Texas Instruments Incorporated - https://www.ti.com/
  */
 
 #include "k3-dev.h"
@@ -53,6 +53,7 @@ static struct ti_dev soc_dev_list[] = {
 	PSC_DEV(92, &soc_lpsc_list[5]),
 	PSC_DEV(91, &soc_lpsc_list[6]),
 	PSC_DEV(146, &soc_lpsc_list[7]),
+	PSC_DEV(278, &soc_lpsc_list[7]),
 	PSC_DEV(4, &soc_lpsc_list[8]),
 	PSC_DEV(4, &soc_lpsc_list[9]),
 	PSC_DEV(202, &soc_lpsc_list[10]),
@@ -77,5 +78,5 @@ const struct ti_k3_pd_platdata j7200_pd_platdata = {
 	.num_psc = 2,
 	.num_pd = 6,
 	.num_lpsc = 17,
-	.num_devs = 22,
+	.num_devs = 23,
 };

@@ -23,6 +23,7 @@
 		/* 4G RAM */
 		reg = <0x00000000 0x80000000 0x00000000 0x80000000>,
 		      <0x00000008 0x80000000 0x00000000 0x80000000>;
+		bootph-pre-ram;
 	};
 
 	reserved-memory {
@@ -281,6 +282,13 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&wkup_i2c0_pins_default>;
 	clock-frequency = <400000>;
+
+	gpio@38 {
+		compatible = "nxp,pca9554";
+		reg = <0x38>;
+		gpio-controller;
+		#gpio-cells = <2>;
+	};
 
 	pca9554: gpio@39 {
 		compatible = "nxp,pca9554";

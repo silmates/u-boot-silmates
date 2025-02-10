@@ -49,6 +49,7 @@
 #define CQSPI_REG_CONFIG_CHIPSELECT_LSB         10
 #define CQSPI_REG_CONFIG_BAUD_LSB               19
 #define CQSPI_REG_CONFIG_DTR_PROTO		BIT(24)
+#define CQSPI_REG_CONFIG_PHY_PIPELINE		BIT(25)
 #define CQSPI_REG_CONFIG_DUAL_OPCODE		BIT(30)
 #define CQSPI_REG_CONFIG_IDLE_LSB               31
 #define CQSPI_REG_CONFIG_CHIPSELECT_MASK        0xF
@@ -83,6 +84,7 @@
 
 #define CQSPI_REG_RD_DATA_CAPTURE               0x10
 #define CQSPI_REG_RD_DATA_CAPTURE_BYPASS        BIT(0)
+#define CQSPI_REG_RD_DATA_CAPTURE_SMPL_EDGE     BIT(5)
 #define CQSPI_REG_READCAPTURE_DQS_ENABLE        BIT(8)
 #define CQSPI_REG_RD_DATA_CAPTURE_DELAY_LSB     1
 #define CQSPI_REG_RD_DATA_CAPTURE_DELAY_MASK    0xF
@@ -162,6 +164,11 @@
 #define CQSPI_REG_OP_EXT_STIG_LSB               0
 
 #define CQSPI_REG_PHY_CONFIG                    0xB4
+#define CQSPI_REG_PHY_CONFIG_RX_DEL_LSB		0
+#define CQSPI_REG_PHY_CONFIG_RX_DEL_MASK	0x7F
+#define CQSPI_REG_PHY_CONFIG_TX_DEL_LSB		16
+#define CQSPI_REG_PHY_CONFIG_TX_DEL_MASK	0x7F
+#define CQSPI_REG_PHY_CONFIG_RESYNC		BIT(31)
 #define CQSPI_REG_PHY_CONFIG_RESET_FLD_MASK     0x40000000
 
 #define CQSPI_DMA_DST_ADDR_REG                  0x1800
@@ -197,6 +204,36 @@
 	(((readl((reg_base) + CQSPI_REG_SDRAMLEVEL)) >>	\
 	CQSPI_REG_SDRAMLEVEL_WR_LSB) & CQSPI_REG_SDRAMLEVEL_WR_MASK)
 
+#define CQSPI_PHY_INIT_RD		1
+#define CQSPI_PHY_MAX_RD		4
+#define CQSPI_PHY_MAX_RX		63
+#define CQSPI_PHY_MAX_TX		63
+#define CQSPI_PHY_LOW_RX_BOUND		15
+#define CQSPI_PHY_HIGH_RX_BOUND		25
+#define CQSPI_PHY_LOW_TX_BOUND		32
+#define CQSPI_PHY_HIGH_TX_BOUND		48
+#define CQSPI_PHY_TX_LOOKUP_LOW_BOUND	24
+#define CQSPI_PHY_TX_LOOKUP_HIGH_BOUND	38
+
+#define CQSPI_PHY_DEFAULT_TEMP		45
+#define CQSPI_PHY_MIN_TEMP		-45
+#define CQSPI_PHY_MAX_TEMP		135
+#define CQSPI_PHY_MID_TEMP		(CQSPI_PHY_MIN_TEMP +	\
+					((CQSPI_PHY_MAX_TEMP - CQSPI_PHY_MIN_TEMP) / 2))
+
+static const u8 phy_tuning_pattern[] = {
+0xFE, 0xFF, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0xFE, 0xFE, 0x01, 0x01,
+0x01, 0x01, 0x00, 0x00, 0xFE, 0xFE, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00,
+0x00, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0xFE, 0xFE, 0xFF, 0x01,
+0x01, 0x01, 0x01, 0x01, 0xFE, 0x00, 0xFE, 0xFE, 0x01, 0x01, 0x01, 0x01, 0xFE,
+0x00, 0xFE, 0xFE, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE, 0x00, 0xFE, 0xFE,
+0xFF, 0xFF, 0xFF, 0xFF, 0xFE, 0x00, 0xFE, 0xFE, 0xFF, 0x01, 0x01, 0x01, 0x01,
+0x01, 0x00, 0xFE, 0xFE, 0xFE, 0x01, 0x01, 0x01, 0x01, 0x00, 0xFE, 0xFE, 0xFE,
+0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF,
+0xFF, 0x00, 0xFE, 0xFE, 0xFE, 0xFF, 0x01, 0x01, 0x01, 0x01, 0x01, 0xFE, 0xFE,
+0xFE, 0xFE, 0x01, 0x01, 0x01, 0x01, 0xFE, 0xFE, 0xFE, 0xFE, 0x01,
+};
+
 struct cadence_spi_plat {
 	unsigned int	max_hz;
 	void		*regbase;
@@ -208,6 +245,10 @@ struct cadence_spi_plat {
 	fdt_addr_t	ahbsize;
 	bool		use_dac_mode;
 	int		read_delay;
+	bool		has_phy;
+	u32		phy_pattern_start;
+	u32		phy_tx_start;
+	u32		phy_tx_end;
 
 	/* Flash parameters */
 	u32		page_size;
@@ -237,8 +278,15 @@ struct cadence_spi_priv {
 	unsigned int	qspi_calibrated_hz;
 	unsigned int	qspi_calibrated_cs;
 	unsigned int	previous_hz;
+	int		phy_read_delay;
+	bool		use_phy;
 	u32		wr_delay;
 	int		read_delay;
+	bool		has_phy;
+	u32		phy_pattern_start;
+	struct spi_mem_op phy_read_op;
+	u32		phy_tx_start;
+	u32		phy_tx_end;
 
 	struct reset_ctl_bulk *resets;
 	u32		page_size;
@@ -262,8 +310,16 @@ struct cadence_spi_priv {
 	bool		dtr;
 };
 
+struct phy_setting {
+	u8	rx;
+	u8	tx;
+	u8	read_delay;
+};
+
 /* Functions call declaration */
 void cadence_qspi_apb_controller_init(struct cadence_spi_priv *priv);
+void cadence_qspi_apb_set_tx_dll(void *reg_base, u8 dll);
+void cadence_qspi_apb_set_rx_dll(void *reg_base, u8 dll);
 void cadence_qspi_apb_controller_enable(void *reg_base_addr);
 void cadence_qspi_apb_controller_disable(void *reg_base_addr);
 void cadence_qspi_apb_dac_mode_enable(void *reg_base);

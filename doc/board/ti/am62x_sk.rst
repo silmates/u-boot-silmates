@@ -115,23 +115,19 @@ Below is the pictorial representation of boot flow:
 
 Sources:
 --------
-1. SYSFW:
-	Tree: git://git.ti.com/k3-image-gen/k3-image-gen.git
-	Branch: master
-
-2. ATF:
+1. ATF:
 	Tree: https://github.com/ARM-software/arm-trusted-firmware.git
 	Branch: master
 
-3. OPTEE:
+2. OPTEE:
 	Tree: https://github.com/OP-TEE/optee_os.git
 	Branch: master
 
-4. U-Boot:
+3. U-Boot:
 	Tree: https://source.denx.de/u-boot/u-boot
 	Branch: master
 
-5. TI Linux Firmware:
+4. TI Linux Firmware:
 	Tree: git://git.ti.com/processor-firmware/ti-linux-firmware.git
 	Branch: ti-linux-firmware
 
@@ -139,35 +135,37 @@ Build procedure:
 ----------------
 1. ATF:
 
-.. code-block:: text
+.. code-block:: bash
 
- $ make CROSS_COMPILE=aarch64-none-linux-gnu- ARCH=aarch64 PLAT=k3 TARGET_BOARD=lite SPD=opteed
+ $ make CROSS_COMPILE=aarch64-none-linux-gnu- ARCH=aarch64 PLAT=k3 \
+        TARGET_BOARD=lite SPD=opteed
 
 2. OPTEE:
 
-.. code-block:: text
+.. code-block:: bash
 
- $ make PLATFORM=k3 CFG_ARM64_core=y CROSS_COMPILE=arm-none-linux-gnueabihf- CROSS_COMPILE64=aarch64-none-linux-gnu-
+ $ make PLATFORM=k3 CFG_ARM64_core=y CROSS_COMPILE=arm-none-linux-gnueabihf- \
+        CROSS_COMPILE64=aarch64-none-linux-gnu-
 
 3. U-Boot:
 
 * 3.1 R5:
 
-.. code-block:: text
+.. code-block:: bash
 
- $ make ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabihf- am62x_evm_r5_defconfig O=/tmp/r5
- $ make ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabihf- O=/tmp/r5
- $ cd <k3-image-gen>
- $ make ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabihf- SOC=am62x SBL=/tmp/r5/spl/u-boot-spl.bin SYSFW_PATH=<path to ti-linux-firmware>/ti-sysfw/ti-fs-firmware-am62x-gp.bin
-
-Use the tiboot3.bin generated from last command
+ $ make ARCH=arm am62x_evm_r5_defconfig
+ $ make ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabihf- \
+        BINMAN_INDIRS=<path/to/ti-linux-firmware>
 
 * 3.2 A53:
 
-.. code-block:: text
+.. code-block:: bash
 
- $ make ARCH=arm CROSS_COMPILE=aarch64-none-linux-gnu- am62x_evm_a53_defconfig O=/tmp/a53
- $ make ARCH=arm CROSS_COMPILE=aarch64-none-linux-gnu- ATF=<path to ATF dir>/build/k3/lite/release/bl31.bin TEE=<path to OPTEE OS dir>/out/arm-plat-k3/core/tee-pager_v2.bin DM=<path to ti-linux-firmware>/ti-dm/am62xx/ipc_echo_testb_mcu1_0_release_strip.xer5f O=/tmp/a53
+ $ make ARCH=arm am62x_evm_a53_defconfig
+ $ make ARCH=arm CROSS_COMPILE=aarch64-none-linux-gnu- \
+        BL31=<path to ATF dir>/build/k3/lite/release/bl31.bin \
+        TEE=<path to OPTEE OS dir>/out/arm-plat-k3/core/tee-pager_v2.bin \
+        BINMAN_INDIRS=<path/to/ti-linux-firmware>
 
 Target Images
 --------------
@@ -229,3 +227,28 @@ Image formats:
                 | |   SPL DTB 1...N   | |
                 | +-------------------+ |
                 +-----------------------+
+
+Switch Setting for Boot Mode
+----------------------------
+
+Boot Mode pins provide means to select the boot mode and options before the
+device is powered up. After every POR, they are the main source to populate
+the Boot Parameter Tables.
+
+The following table shows some common boot modes used on AM62 platform. More
+details can be found in the Technical Reference Manual:
+https://www.ti.com/lit/pdf/spruiv7 under the `Boot Mode Pins` section.
+
+*Boot Modes*
+
+============ ============= =============
+Switch Label SW2: 12345678 SW3: 12345678
+============ ============= =============
+SD           01000000      11000010
+OSPI         00000000      11001110
+EMMC         00000000      11010010
+UART         00000000      11011100
+USB DFU      00000000      11001010
+============ ============= =============
+
+For SW2 and SW1, the switch state in the "ON" position = 1.

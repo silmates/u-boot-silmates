@@ -3,9 +3,9 @@
  * J721E specific device platform data
  *
  * This file is auto generated. Please do not hand edit and report any issues
- * to Dave Gerlach <d-gerlach@ti.com>.
+ * to Bryan Brattlof <bb@ti.com>.
  *
- * Copyright (C) 2020-2021 Texas Instruments Incorporated - https://www.ti.com/
+ * Copyright (C) 2020-2022 Texas Instruments Incorporated - https://www.ti.com/
  */
 
 #include "k3-dev.h"
@@ -46,6 +46,7 @@ static struct ti_dev soc_dev_list[] = {
 	PSC_DEV(30, &soc_lpsc_list[0]),
 	PSC_DEV(61, &soc_lpsc_list[0]),
 	PSC_DEV(146, &soc_lpsc_list[1]),
+	PSC_DEV(279, &soc_lpsc_list[1]),
 	PSC_DEV(90, &soc_lpsc_list[2]),
 	PSC_DEV(47, &soc_lpsc_list[3]),
 	PSC_DEV(288, &soc_lpsc_list[4]),
@@ -75,5 +76,5 @@ const struct ti_k3_pd_platdata j721e_pd_platdata = {
 	.num_psc = 2,
 	.num_pd = 5,
 	.num_lpsc = 16,
-	.num_devs = 22,
+	.num_devs = 23,
 };

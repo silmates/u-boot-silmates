@@ -7,6 +7,7 @@
 #include "k3-am62a7-sk.dts"
 #include "k3-am62a-ddr-1866mhz-32bit.dtsi"
 #include "k3-am62a-ddr.dtsi"
+#include "k3-am62a-sk-binman.dtsi"
 
 #include "k3-am62a7-sk-u-boot.dtsi"
 
@@ -25,8 +26,10 @@
 
 	memory@80000000 {
 		device_type = "memory";
-		reg = <0x00000000 0x80000000 0x00000000 0x80000000>; /* 2G RAM */
-		u-boot,dm-spl;
+		/* 4G RAM */
+		reg = <0x00000000 0x80000000 0x00000000 0x80000000>,
+		      <0x00000008 0x80000000 0x00000000 0x80000000>;
+		bootph-pre-ram;
 	};
 
 	reserved-memory {
@@ -45,7 +48,8 @@
 		compatible = "ti,am654-rproc";
 		reg = <0x00 0x00a90000 0x00 0x10>;
 		power-domains = <&k3_pds 61 TI_SCI_PD_EXCLUSIVE>,
-				<&k3_pds 135 TI_SCI_PD_EXCLUSIVE>;
+				<&k3_pds 135 TI_SCI_PD_EXCLUSIVE>,
+				<&k3_pds 166 TI_SCI_PD_EXCLUSIVE>;
 		resets = <&k3_reset 135 0>;
 		clocks = <&k3_clks 61 0>;
 		assigned-clocks = <&k3_clks 61 0>, <&k3_clks 135 0>;
@@ -54,7 +58,7 @@
 		ti,sci = <&dmsc>;
 		ti,sci-proc-id = <32>;
 		ti,sci-host-id = <10>;
-		u-boot,dm-spl;
+		bootph-pre-ram;
 	};
 
 	dm_tifs: dm-tifs {
@@ -64,7 +68,7 @@
 		mbox-names = "rx", "tx";
 		mboxes= <&secure_proxy_main 22>,
 			<&secure_proxy_main 23>;
-		u-boot,dm-spl;
+		bootph-pre-ram;
 	};
 };
 
@@ -77,6 +81,15 @@
 	ti,secure-host;
 };
 
+&cbass_mcu {
+	mcu_esm: esm@4100000 {
+		compatible = "ti,j721e-esm";
+		reg = <0x0 0x4100000 0x0 0x1000>;
+		ti,esm-pins = <0>, <1>, <2>, <85>;
+		bootph-pre-ram;
+	};
+};
+
 &cbass_main {
 	sa3_secproxy: secproxy@44880000 {
 		compatible = "ti,am654-secure-proxy";
@@ -85,7 +98,7 @@
 		      <0x0 0x44860000 0x0 0x20000>,
 		      <0x0 0x43600000 0x0 0x10000>;
 		reg-names = "rt", "scfg", "target_data";
-		u-boot,dm-spl;
+		bootph-pre-ram;
 	};
 
 	sysctrler: sysctrler {
@@ -94,13 +107,20 @@
 			<&secure_proxy_main 0>,
 			<&sa3_secproxy 0>;
 		mbox-names = "tx", "rx", "boot_notify";
-		u-boot,dm-spl;
+		bootph-pre-ram;
+	};
+
+	main_esm: esm@420000 {
+		compatible = "ti,j721e-esm";
+		reg = <0x0 0x420000 0x0 0x1000>;
+		ti,esm-pins = <69>, <160>, <161>, <162>, <163>, <177>, <178>;
+		bootph-pre-ram;
 	};
 };
 
 &mcu_pmx0 {
 	status = "okay";
-	u-boot,dm-spl;
+	bootph-pre-ram;
 
 	wkup_uart0_pins_default: wkup-uart0-pins-default {
 		pinctrl-single,pins = <
@@ -109,12 +129,12 @@
 			AM62X_MCU_IOPAD(0x024, PIN_INPUT, 0)	/* (B4) WKUP_UART0_RXD */
 			AM62X_MCU_IOPAD(0x028, PIN_OUTPUT, 0)	/* (C5) WKUP_UART0_TXD */
 		>;
-		u-boot,dm-spl;
+		bootph-pre-ram;
 	};
 };
 
 &main_pmx0 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 	main_uart1_pins_default: main-uart1-pins-default {
 		pinctrl-single,pins = <
 			AM62X_IOPAD(0x194, PIN_INPUT, 2)	/* (B19) MCASP0_AXR3.UART1_CTSn */
@@ -122,7 +142,7 @@
 			AM62X_IOPAD(0x1ac, PIN_INPUT, 2)	/* (E19) MCASP0_AFSR.UART1_RXD */
 			AM62X_IOPAD(0x1b0, PIN_OUTPUT, 2)	/* (A20) MCASP0_ACLKR.UART1_TXD */
 		>;
-		u-boot,dm-spl;
+		bootph-pre-ram;
 	};
 };
 
@@ -131,7 +151,7 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&wkup_uart0_pins_default>;
 	status = "okay";
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 /* Main UART1 is used for TIFS firmware logs */
@@ -139,5 +159,18 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&main_uart1_pins_default>;
 	status = "okay";
-	u-boot,dm-spl;
+	bootph-pre-ram;
+};
+
+&main_pktdma {
+	ti,sci = <&dm_tifs>;
+};
+
+&main_bcdma {
+	ti,sci = <&dm_tifs>;
+};
+
+&ospi0 {
+	reg = <0x00 0x0fc40000 0x00 0x100>,
+	      <0x00 0x60000000 0x00 0x08000000>;
 };

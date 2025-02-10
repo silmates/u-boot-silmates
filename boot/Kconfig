@@ -78,6 +78,17 @@ config FIT_SIGNATURE
 	  format support in this case, enable it using
 	  CONFIG_LEGACY_IMAGE_FORMAT.
 
+config FIT_SIGNATURE_ENFORCE
+	bool "Enforce the signature in fit images"
+	default y if TI_SECURE_DEVICE
+	depends on FIT_SIGNATURE
+	help
+	  Enabling FIT_SIGNATURE by default doesn't enforce the U-boot DTB to be
+	  having keys and allows booting the images without having proper setup.
+	  This option enforces the fit signature mechanism to contain the keys in
+	  the DTB and enforce the nodes to be authenticated without relying on
+	  the "required" node in the DTB.
+
 config FIT_SIGNATURE_MAX_SIZE
 	hex "Max size of signed FIT structures"
 	depends on FIT_SIGNATURE
@@ -126,7 +137,7 @@ config FIT_IMAGE_POST_PROCESS
 	bool "Enable post-processing of FIT artifacts after loading by U-Boot"
 	depends on FIT
 	depends on TI_SECURE_DEVICE || SOCFPGA_SECURE_VAB_AUTH
-	default y if TI_SECURE_DEVICE
+	default y if TI_SECURE_DEVICE && !FIT_SIGNATURE
 	help
 	  Allows doing any sort of manipulation to blobs after they got extracted
 	  from FIT images like stripping off headers or modifying the size of the

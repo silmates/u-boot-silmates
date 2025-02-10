@@ -810,6 +810,15 @@ config AVB_BUF_SIZE
 	  AVB requires a buffer for memory transactions. This variable defines the
 	  buffer size.
 
+config AVB_PUBKEY_FILE
+	string "Path to the root public key file"
+	default "default.avbpubkey"
+	help
+	  This specifies the path to file having the public key that u-boot
+	  will use to verify the payload against. The file can usually be
+	  created via `avbtool extract_public_key --key <path_to_private_key>
+	  --out <path_to_public_key>`.
+
 endif # AVB_VERIFY
 
 config SCP03
@@ -1106,3 +1115,15 @@ config FDT_SIMPLEFB
 
 config IO_TRACE
 	bool
+
+config BMP
+	bool "Enable bmp image display"
+	default y if CMD_BMP
+	help
+	  Enable bmp functions to display bmp image and get bmp info.
+
+config SPL_BMP
+	bool "Enable bmp image display at  SPL"
+	depends on SPL_VIDEO
+	help
+	  Enable bmp functions to display bmp image and get bmp info at SPL.

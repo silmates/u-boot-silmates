@@ -13,44 +13,59 @@
 
 struct udevice;
 
-#define SPI_MEM_OP_CMD(__opcode, __buswidth)			\
+#define SPI_MEM_OP_DTR .dtr = 1
+
+#define SPI_MEM_OP_CMD(__opcode, __buswidth, ...)		\
 	{							\
 		.buswidth = __buswidth,				\
 		.opcode = __opcode,				\
 		.nbytes = 1,					\
+		__VA_ARGS__					\
 	}
 
-#define SPI_MEM_OP_ADDR(__nbytes, __val, __buswidth)		\
+#define SPI_MEM_OP_EXT_CMD(__nbytes, __opcode, __buswidth, ...)	\
+	{							\
+		.buswidth = __buswidth,				\
+		.opcode = __opcode,				\
+		.nbytes = __nbytes,				\
+		__VA_ARGS__					\
+	}
+
+#define SPI_MEM_OP_ADDR(__nbytes, __val, __buswidth, ...)	\
 	{							\
 		.nbytes = __nbytes,				\
 		.val = __val,					\
 		.buswidth = __buswidth,				\
+		__VA_ARGS__					\
 	}
 
 #define SPI_MEM_OP_NO_ADDR	{ }
 
-#define SPI_MEM_OP_DUMMY(__nbytes, __buswidth)			\
+#define SPI_MEM_OP_DUMMY(__nbytes, __buswidth, ...)		\
 	{							\
 		.nbytes = __nbytes,				\
 		.buswidth = __buswidth,				\
+		__VA_ARGS__					\
 	}
 
 #define SPI_MEM_OP_NO_DUMMY	{ }
 
-#define SPI_MEM_OP_DATA_IN(__nbytes, __buf, __buswidth)		\
+#define SPI_MEM_OP_DATA_IN(__nbytes, __buf, __buswidth, ...)	\
 	{							\
 		.dir = SPI_MEM_DATA_IN,				\
 		.nbytes = __nbytes,				\
 		.buf.in = __buf,				\
 		.buswidth = __buswidth,				\
+		__VA_ARGS__					\
 	}
 
-#define SPI_MEM_OP_DATA_OUT(__nbytes, __buf, __buswidth)	\
+#define SPI_MEM_OP_DATA_OUT(__nbytes, __buf, __buswidth, ...)	\
 	{							\
 		.dir = SPI_MEM_DATA_OUT,			\
 		.nbytes = __nbytes,				\
 		.buf.out = __buf,				\
 		.buswidth = __buswidth,				\
+		__VA_ARGS__					\
 	}
 
 #define SPI_MEM_OP_NO_DATA	{ }
@@ -241,6 +256,12 @@ static inline void *spi_mem_get_drvdata(struct spi_mem *mem)
  *		  the currently mapped area), and the caller of
  *		  spi_mem_dirmap_write() is responsible for calling it again in
  *		  this case.
+ * @do_calibration: perform calibration needed for high SPI clock speed
+ *		    operation. Should be called after the SPI memory device has
+ *		    been completely initialized. The op passed should contain
+ *		    a template for the read operation used for the device so
+ *		    the controller can decide what type of calibration is
+ *		    required for this type of read.
  *
  * This interface should be implemented by SPI controllers providing an
  * high-level interface to execute SPI memory operation, which is usually the
@@ -264,6 +285,7 @@ struct spi_controller_mem_ops {
 			       u64 offs, size_t len, void *buf);
 	ssize_t (*dirmap_write)(struct spi_mem_dirmap_desc *desc,
 				u64 offs, size_t len, const void *buf);
+	void (*do_calibration)(struct spi_slave *slave, struct spi_mem_op *op);
 };
 
 #ifndef __UBOOT__
@@ -338,6 +360,7 @@ ssize_t spi_mem_dirmap_read(struct spi_mem_dirmap_desc *desc,
 			    u64 offs, size_t len, void *buf);
 ssize_t spi_mem_dirmap_write(struct spi_mem_dirmap_desc *desc,
 			     u64 offs, size_t len, const void *buf);
+int spi_mem_do_calibration(struct spi_slave *slave, struct spi_mem_op *op);
 
 #ifndef __UBOOT__
 int spi_mem_driver_register_with_owner(struct spi_mem_driver *drv,

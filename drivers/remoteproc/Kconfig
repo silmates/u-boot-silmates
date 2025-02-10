@@ -10,6 +10,7 @@ menu "Remote Processor drivers"
 # All users should depend on DM
 config REMOTEPROC
 	bool
+	select FS_LOADER
 	depends on DM
 
 # Please keep the configuration alphabetically sorted.
@@ -65,10 +66,21 @@ config REMOTEPROC_TI_K3_DSP
 config REMOTEPROC_TI_K3_R5F
 	bool "TI K3 R5F remoteproc support"
 	select REMOTEPROC
+	select MISC
 	depends on ARCH_K3
 	depends on TI_SCI_PROTOCOL
 	help
 	  Say y here to support TI's R5F remote processor subsystems
+	  on various TI K3 family of SoCs through the remote processor
+	  framework.
+
+config REMOTEPROC_TI_K3_M4F
+	bool "TI K3 M4F remoteproc support"
+	select REMOTEPROC
+	depends on ARCH_K3
+	depends on TI_SCI_PROTOCOL
+	help
+	  Say y here to support TI's M4F remote processor subsystems
 	  on various TI K3 family of SoCs through the remote processor
 	  framework.
 
@@ -101,5 +113,12 @@ config REMOTEPROC_TI_IPU
 	depends on OF_CONTROL
 	help
 	  Say 'y' here to add support for TI' K3 remoteproc driver.
+
+config REMOTEPROC_MAX_FW_SIZE
+	hex "Maximum size of firmware that needs to be loaded to rproc"
+	default 0x10000
+	help
+	  Maximum size of the firmware file (elf, binary) that needs to be
+	  loaded to th rproc core.
 
 endmenu

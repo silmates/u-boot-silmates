@@ -14,6 +14,13 @@
 #include <dm/uclass-internal.h>
 #include <dm/pinctrl.h>
 
+#define CTRLMMR_MCU_RST_CTRL             0x04518170
+#define RST_CTRL_ESM_ERROR_RST_EN_Z_MASK 0xFFFDFFFF
+
+struct fwl_data cbass_main_fwls[] = {
+       { "FSS_DAT_REG3", 7, 8 },
+};
+
 /*
  * This uninitialized global variable would normal end up in the .bss section,
  * but the .bss is cleared between writing and reading this variable, so move
@@ -65,6 +72,29 @@ static void ctrl_mmr_unlock(void)
 	mmr_unlock(PADCFG_MMR1_BASE, 1);
 }
 
+#if (IS_ENABLED(CONFIG_CPU_V7R))
+static void setup_qos(void)
+{
+	u32 i;
+
+	for (i = 0; i < am62a_qos_count; i++)
+		writel(am62a_qos_data[i].val, (uintptr_t)am62a_qos_data[i].reg);
+}
+#else
+static void setup_qos(void)
+{
+}
+#endif
+
+static __maybe_unused void enable_mcu_esm_reset(void)
+{
+	/* Set CTRLMMR_MCU_RST_CTRL:MCU_ESM_ERROR_RST_EN_Z  to '0' (low active) */
+	u32 stat = readl(CTRLMMR_MCU_RST_CTRL);
+
+	stat &= RST_CTRL_ESM_ERROR_RST_EN_Z_MASK;
+	writel(stat, CTRLMMR_MCU_RST_CTRL);
+}
+
 void board_init_f(ulong dummy)
 {
 	struct udevice *dev;
@@ -84,6 +114,8 @@ void board_init_f(ulong dummy)
 
 	/* Init DM early */
 	spl_early_init();
+
+	wkup_ctrl_remove_can_io_isolation_if_set();
 
 	/*
 	 * Process pinctrl for the serial0 and serial3, aka WKUP_UART0 and
@@ -152,13 +184,51 @@ void board_init_f(ulong dummy)
 	/* Output System Firmware version info */
 	k3_sysfw_print_ver();
 
+       /* Disable ROM configured firewalls right after loading sysfw */
+       remove_fwl_configs(cbass_main_fwls, ARRAY_SIZE(cbass_main_fwls));
+
+	if (IS_ENABLED(CONFIG_ESM_K3)) {
+		/* Probe/configure ESM0 */
+		ret = uclass_get_device_by_name(UCLASS_MISC, "esm@420000", &dev);
+		if (ret)
+			printf("esm main init failed: %d\n", ret);
+
+		/* Probe/configure MCUESM */
+		ret = uclass_get_device_by_name(UCLASS_MISC, "esm@4100000", &dev);
+		if (ret)
+			printf("esm mcu init failed: %d\n", ret);
+
+		enable_mcu_esm_reset();
+	}
+
 #if defined(CONFIG_K3_AM62A_DDRSS)
 	ret = uclass_get_device(UCLASS_RAM, 0, &dev);
 	if (ret)
 		panic("DRAM init failed: %d\n", ret);
 #endif
 
+	setup_qos();
+
 	printf("am62a_init: %s done\n", __func__);
+}
+
+u32 spl_mmc_boot_mode(struct mmc *mmc, const u32 boot_device)
+{
+	u32 devstat = readl(CTRLMMR_MAIN_DEVSTAT);
+	u32 bootmode = (devstat & MAIN_DEVSTAT_PRIMARY_BOOTMODE_MASK) >>
+				MAIN_DEVSTAT_PRIMARY_BOOTMODE_SHIFT;
+	u32 bootmode_cfg = (devstat & MAIN_DEVSTAT_PRIMARY_BOOTMODE_CFG_MASK) >>
+			    MAIN_DEVSTAT_PRIMARY_BOOTMODE_CFG_SHIFT;
+
+	switch (bootmode) {
+	case BOOT_DEVICE_EMMC:
+		return MMCSD_MODE_EMMCBOOT;
+	case BOOT_DEVICE_MMC:
+		if (bootmode_cfg & MAIN_DEVSTAT_PRIMARY_MMC_FS_RAW_MASK)
+			return MMCSD_MODE_RAW;
+	default:
+		return MMCSD_MODE_FS;
+	}
 }
 
 static u32 __get_backup_bootmedia(u32 devstat)

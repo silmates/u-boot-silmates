@@ -34,10 +34,10 @@ from dtoc import fdt_util
 from binman.etype import fdtmap
 from binman.etype import image_header
 from binman.image import Image
-from patman import command
-from patman import test_util
-from patman import tools
-from patman import tout
+from u_boot_pylib import command
+from u_boot_pylib import test_util
+from u_boot_pylib import tools
+from u_boot_pylib import tout
 
 # Contents of test files, corresponding to different entry types
 U_BOOT_DATA           = b'1234'
@@ -87,6 +87,7 @@ FSP_S_DATA            = b'fsp_s'
 FSP_T_DATA            = b'fsp_t'
 ATF_BL31_DATA         = b'bl31'
 TEE_OS_DATA           = b'this is some tee OS data'
+TI_DM_DATA            = b'tidmtidm'
 ATF_BL2U_DATA         = b'bl2u'
 OPENSBI_DATA          = b'opensbi'
 SCP_DATA              = b'scp'
@@ -97,6 +98,8 @@ ENV_DATA              = b'var1=1\nvar2="2"'
 PRE_LOAD_MAGIC        = b'UBSH'
 PRE_LOAD_VERSION      = 0x11223344.to_bytes(4, 'big')
 PRE_LOAD_HDR_SIZE     = 0x00001000.to_bytes(4, 'big')
+TI_BOARD_CONFIG_DATA  = b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+TI_UNSECURE_DATA      = b'unsecuredata'
 
 # Subdirectory of the input dir to use to put test FDTs
 TEST_FDT_SUBDIR       = 'fdts'
@@ -199,14 +202,19 @@ class TestFunctional(unittest.TestCase):
         shutil.copytree(cls.TestFile('files'),
                         os.path.join(cls._indir, 'files'))
 
+        shutil.copytree(cls.TestFile('yaml'),
+                        os.path.join(cls._indir, 'yaml'))
+
         TestFunctional._MakeInputFile('compress', COMPRESS_DATA)
         TestFunctional._MakeInputFile('compress_big', COMPRESS_DATA_BIG)
         TestFunctional._MakeInputFile('bl31.bin', ATF_BL31_DATA)
         TestFunctional._MakeInputFile('tee-pager.bin', TEE_OS_DATA)
+        TestFunctional._MakeInputFile('dm.bin', TI_DM_DATA)
         TestFunctional._MakeInputFile('bl2u.bin', ATF_BL2U_DATA)
         TestFunctional._MakeInputFile('fw_dynamic.bin', OPENSBI_DATA)
         TestFunctional._MakeInputFile('scp.bin', SCP_DATA)
         TestFunctional._MakeInputFile('rockchip-tpl.bin', ROCKCHIP_TPL_DATA)
+        TestFunctional._MakeInputFile('ti_unsecure.bin', TI_UNSECURE_DATA)
 
         # Add a few .dtb files for testing
         TestFunctional._MakeInputFile('%s/test-fdt1.dtb' % TEST_FDT_SUBDIR,
@@ -5381,6 +5389,11 @@ fdt         fdtmap                Extract the devicetree blob from the fdtmap
         data = self._DoReadFile('222_tee_os.dts')
         self.assertEqual(TEE_OS_DATA, data[:len(TEE_OS_DATA)])
 
+    def testPackTiDm(self):
+        """Test that an image with a TI DM binary can be created"""
+        data = self._DoReadFile('225_ti_dm.dts')
+        self.assertEqual(TI_DM_DATA, data[:len(TI_DM_DATA)])
+
     def testFitFdtOper(self):
         """Check handling of a specified FIT operation"""
         entry_args = {
@@ -6404,6 +6417,120 @@ fdt         fdtmap                Extract the devicetree blob from the fdtmap
             self._DoTestFile('278_mkimage_missing_multiple.dts', allow_missing=False)
         self.assertIn("not found in input path", str(e.exception))
 
+    def testX509Cert(self):
+        """Test creating an X509 certificate"""
+        keyfile = self.TestFile('key.key')
+        entry_args = {
+            'keyfile': keyfile,
+        }
+        data = self._DoReadFileDtb('279_x509_cert.dts',
+                                   entry_args=entry_args)[0]
+        cert = data[:-4]
+        self.assertEqual(U_BOOT_DATA, data[-4:])
+
+        # TODO: verify the signature
+
+    def testX509CertMissing(self):
+        """Test that binman still produces an image if openssl is missing"""
+        keyfile = self.TestFile('key.key')
+        entry_args = {
+            'keyfile': 'keyfile',
+        }
+        with test_util.capture_sys_output() as (_, stderr):
+            self._DoTestFile('279_x509_cert.dts',
+                             force_missing_bintools='openssl',
+                             entry_args=entry_args)
+        err = stderr.getvalue()
+        self.assertRegex(err, "Image 'image'.*missing bintools.*: openssl")
+
+    def testTIBoardConfig(self):
+        """Test that a schema validated board config file can be generated"""
+        data = self._DoReadFile('277_ti_board_cfg.dts')
+        self.assertEqual(TI_BOARD_CONFIG_DATA, data)
+
+    def testTIBoardConfigCombined(self):
+        """Test that a schema validated combined board config file can be generated"""
+        data = self._DoReadFile('278_ti_board_cfg_combined.dts')
+        configlen_noheader = TI_BOARD_CONFIG_DATA * 4
+        self.assertGreater(data, configlen_noheader)
+
+    def testTIBoardConfigNoDataType(self):
+        """Test that error is thrown when data type is not supported"""
+        with self.assertRaises(ValueError) as e:
+            data = self._DoReadFile('279_ti_board_cfg_no_type.dts')
+        self.assertIn("Schema validation error", str(e.exception))
+
+    def testPackTiSecure(self):
+        """Test that an image with a TI secured binary can be created"""
+        keyfile = self.TestFile('key.key')
+        entry_args = {
+            'keyfile': keyfile,
+        }
+        data = self._DoReadFileDtb('279_ti_secure.dts',
+                                   entry_args=entry_args)[0]
+        self.assertGreater(len(data), len(TI_UNSECURE_DATA))
+
+    def testPackTiSecureFirewall(self):
+        """Test that an image with a TI secured binary can be created"""
+        keyfile = self.TestFile('key.key')
+        entry_args = {
+            'keyfile': keyfile,
+        }
+        data_no_firewall = self._DoReadFileDtb('296_ti_secure.dts',
+                                   entry_args=entry_args)[0]
+        data_firewall = self._DoReadFileDtb('319_ti_secure_firewall.dts',
+                                   entry_args=entry_args)[0]
+        self.assertGreater(len(data_firewall),len(data_no_firewall))
+
+    def testPackTiSecureFirewallMissingProperty(self):
+        """Test that an image with a TI secured binary can be created"""
+        keyfile = self.TestFile('key.key')
+        entry_args = {
+            'keyfile': keyfile,
+        }
+        data_firewall = self._DoReadFileDtb('320_ti_secure_firewall_missing_property.dts',
+                                   entry_args=entry_args)[0]
+        self.assertRegex("can't be None in firewall node", str(e.exception))
+
+    def testPackTiSecureMissingTool(self):
+        """Test that an image with a TI secured binary (non-functional) can be created
+        when openssl is missing"""
+        keyfile = self.TestFile('key.key')
+        entry_args = {
+            'keyfile': keyfile,
+        }
+        with test_util.capture_sys_output() as (_, stderr):
+            self._DoTestFile('279_ti_secure.dts',
+                             force_missing_bintools='openssl',
+                             entry_args=entry_args)
+        err = stderr.getvalue()
+        self.assertRegex(err, "Image 'image'.*missing bintools.*: openssl")
+
+    def testPackTiSecureROM(self):
+        """Test that a ROM image with a TI secured binary can be created"""
+        keyfile = self.TestFile('key.key')
+        entry_args = {
+            'keyfile': keyfile,
+        }
+        data = self._DoReadFileDtb('280_ti_secure_rom.dts',
+                                entry_args=entry_args)[0]
+        data_a = self._DoReadFileDtb('288_ti_secure_rom_a.dts',
+                                entry_args=entry_args)[0]
+        data_b = self._DoReadFileDtb('289_ti_secure_rom_b.dts',
+                                entry_args=entry_args)[0]
+        self.assertGreater(len(data), len(TI_UNSECURE_DATA))
+        self.assertGreater(len(data_a), len(TI_UNSECURE_DATA))
+        self.assertGreater(len(data_b), len(TI_UNSECURE_DATA))
+
+    def testPackTiSecureROMCombined(self):
+        """Test that a ROM image with a TI secured binary can be created"""
+        keyfile = self.TestFile('key.key')
+        entry_args = {
+            'keyfile': keyfile,
+        }
+        data = self._DoReadFileDtb('281_ti_secure_rom_combined.dts',
+                                entry_args=entry_args)[0]
+        self.assertGreater(len(data), len(TI_UNSECURE_DATA))
 
 if __name__ == "__main__":
     unittest.main()

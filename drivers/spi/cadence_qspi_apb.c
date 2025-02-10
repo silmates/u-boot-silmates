@@ -43,6 +43,32 @@ __weak void cadence_qspi_apb_enable_linear_mode(bool enable)
 	return;
 }
 
+void cadence_qspi_apb_set_tx_dll(void *reg_base, u8 dll)
+{
+	unsigned int reg;
+
+	reg = readl(reg_base + CQSPI_REG_PHY_CONFIG);
+	reg &= ~(CQSPI_REG_PHY_CONFIG_TX_DEL_MASK <<
+		CQSPI_REG_PHY_CONFIG_TX_DEL_LSB);
+	reg |= (dll & CQSPI_REG_PHY_CONFIG_TX_DEL_MASK) <<
+		CQSPI_REG_PHY_CONFIG_TX_DEL_LSB;
+	reg |= CQSPI_REG_PHY_CONFIG_RESYNC;
+	writel(reg, reg_base + CQSPI_REG_PHY_CONFIG);
+}
+
+void cadence_qspi_apb_set_rx_dll(void *reg_base, u8 dll)
+{
+	unsigned int reg;
+
+	reg = readl(reg_base + CQSPI_REG_PHY_CONFIG);
+	reg &= ~(CQSPI_REG_PHY_CONFIG_RX_DEL_MASK <<
+		CQSPI_REG_PHY_CONFIG_RX_DEL_LSB);
+	reg |= (dll & CQSPI_REG_PHY_CONFIG_RX_DEL_MASK) <<
+		CQSPI_REG_PHY_CONFIG_RX_DEL_LSB;
+	reg |= CQSPI_REG_PHY_CONFIG_RESYNC;
+	writel(reg, reg_base + CQSPI_REG_PHY_CONFIG);
+}
+
 void cadence_qspi_apb_controller_enable(void *reg_base)
 {
 	unsigned int reg;
@@ -83,6 +109,34 @@ static unsigned int cadence_qspi_calc_dummy(const struct spi_mem_op *op,
 	return dummy_clk;
 }
 
+/*
+ * Check if we can use PHY on the given op. This is assuming it will be a DAC
+ * mode read, since PHY won't work on any other type of operation anyway.
+ */
+static bool cadence_qspi_apb_use_phy(struct cadence_spi_priv *priv,
+				     const struct spi_mem_op *op)
+{
+	if (!priv->use_phy)
+		return false;
+
+	if (op->data.nbytes < 16)
+		return false;
+
+	/* PHY is only tuned for 8D-8D-8D. */
+	if (!priv->dtr)
+		return false;
+	if (op->cmd.buswidth != 8)
+		return false;
+	if (op->addr.nbytes && op->addr.buswidth != 8)
+		return false;
+	if (op->dummy.nbytes && op->dummy.buswidth != 8)
+		return false;
+	if (op->data.nbytes && op->data.buswidth != 8)
+		return false;
+
+	return true;
+}
+
 static u32 cadence_qspi_calc_rdreg(struct cadence_spi_priv *priv)
 {
 	u32 rdreg = 0;
@@ -120,7 +174,16 @@ static int cadence_qspi_set_protocol(struct cadence_spi_priv *priv,
 {
 	int ret;
 
-	priv->dtr = op->data.dtr && op->cmd.dtr && op->addr.dtr;
+	/*
+	 * For an op to be DTR, cmd phase along with every other non-empty
+	 * phase should have dtr field set to 1. If an op phase has zero
+	 * nbytes, ignore its dtr field; otherwise, check its dtr field.
+	 * Also, dummy checks not performed here Since supports_op()
+	 * already checks that all or none of the fields are DTR.
+	 */
+	priv->dtr = op->cmd.dtr &&
+		    (!op->addr.nbytes || op->addr.dtr) &&
+		    (!op->data.nbytes || op->data.dtr);
 
 	ret = cadence_qspi_buswidth_to_inst_type(op->cmd.buswidth);
 	if (ret < 0)
@@ -175,6 +238,9 @@ void cadence_qspi_apb_readdata_capture(void *reg_base,
 
 	reg = readl(reg_base + CQSPI_REG_RD_DATA_CAPTURE);
 
+	/* Disable Rising edge sampling */
+	reg &= ~CQSPI_REG_RD_DATA_CAPTURE_SMPL_EDGE;
+
 	if (bypass)
 		reg |= CQSPI_REG_RD_DATA_CAPTURE_BYPASS;
 	else
@@ -186,9 +252,63 @@ void cadence_qspi_apb_readdata_capture(void *reg_base,
 	reg |= (delay & CQSPI_REG_RD_DATA_CAPTURE_DELAY_MASK)
 		<< CQSPI_REG_RD_DATA_CAPTURE_DELAY_LSB;
 
+	reg |= CQSPI_REG_READCAPTURE_DQS_ENABLE;
+
 	writel(reg, reg_base + CQSPI_REG_RD_DATA_CAPTURE);
 
 	cadence_qspi_apb_controller_enable(reg_base);
+}
+
+static void cadence_qspi_apb_phy_enable(struct cadence_spi_priv *priv,
+					bool enable)
+{
+	void *reg_base = priv->regbase;
+	unsigned int reg;
+	u8 dummy;
+
+	if (enable) {
+		cadence_qspi_apb_readdata_capture(priv->regbase, 1,
+						  priv->phy_read_delay);
+
+		reg = readl(reg_base + CQSPI_REG_CONFIG);
+		reg |= CQSPI_REG_CONFIG_PHY_ENABLE_MASK |
+		       CQSPI_REG_CONFIG_PHY_PIPELINE;
+		writel(reg, reg_base + CQSPI_REG_CONFIG);
+
+		/* Reduce dummy cycle by 1. */
+		reg = readl(reg_base + CQSPI_REG_RD_INSTR);
+		dummy = (reg >> CQSPI_REG_RD_INSTR_DUMMY_LSB) &
+			CQSPI_REG_RD_INSTR_DUMMY_MASK;
+		dummy--;
+		reg &= ~(CQSPI_REG_RD_INSTR_DUMMY_MASK <<
+			 CQSPI_REG_RD_INSTR_DUMMY_LSB);
+
+		reg |= (dummy & CQSPI_REG_RD_INSTR_DUMMY_MASK)
+		       << CQSPI_REG_RD_INSTR_DUMMY_LSB;
+		writel(reg, reg_base + CQSPI_REG_RD_INSTR);
+	} else {
+		cadence_qspi_apb_readdata_capture(priv->regbase, 1,
+						  priv->read_delay);
+
+		reg = readl(reg_base + CQSPI_REG_CONFIG);
+		reg &= ~(CQSPI_REG_CONFIG_PHY_ENABLE_MASK |
+			 CQSPI_REG_CONFIG_PHY_PIPELINE);
+		writel(reg, reg_base + CQSPI_REG_CONFIG);
+
+		/* Increment dummy cycle by 1. */
+		reg = readl(reg_base + CQSPI_REG_RD_INSTR);
+		dummy = (reg >> CQSPI_REG_RD_INSTR_DUMMY_LSB) &
+			CQSPI_REG_RD_INSTR_DUMMY_MASK;
+		dummy++;
+		reg &= ~(CQSPI_REG_RD_INSTR_DUMMY_MASK <<
+			 CQSPI_REG_RD_INSTR_DUMMY_LSB);
+
+		reg |= (dummy & CQSPI_REG_RD_INSTR_DUMMY_MASK)
+		       << CQSPI_REG_RD_INSTR_DUMMY_LSB;
+		writel(reg, reg_base + CQSPI_REG_RD_INSTR);
+	}
+
+	cadence_qspi_wait_idle(reg_base);
 }
 
 void cadence_qspi_apb_config_baudrate_div(void *reg_base,
@@ -367,6 +487,9 @@ int cadence_qspi_apb_exec_flash_cmd(void *reg_base, unsigned int reg)
 	if (!cadence_qspi_wait_idle(reg_base))
 		return -EIO;
 
+	/* Flush the CMDCTRL reg after the execution */
+	writel(0, reg_base + CQSPI_REG_CMDCTRL);
+
 	return 0;
 }
 
@@ -453,11 +576,6 @@ int cadence_qspi_apb_command_read(struct cadence_spi_priv *priv,
 	unsigned int dummy_clk;
 	u8 opcode;
 
-	if (rxlen > CQSPI_STIG_DATA_LEN_MAX || !rxbuf) {
-		printf("QSPI: Invalid input arguments rxlen %u\n", rxlen);
-		return -EINVAL;
-	}
-
 	if (priv->dtr)
 		opcode = op->cmd.opcode >> 8;
 	else
@@ -540,25 +658,11 @@ int cadence_qspi_apb_command_write(struct cadence_spi_priv *priv,
 	unsigned int reg = 0;
 	unsigned int wr_data;
 	unsigned int wr_len;
+	unsigned int dummy_clk;
 	unsigned int txlen = op->data.nbytes;
 	const void *txbuf = op->data.buf.out;
 	void *reg_base = priv->regbase;
-	u32 addr;
 	u8 opcode;
-
-	/* Reorder address to SPI bus order if only transferring address */
-	if (!txlen) {
-		addr = cpu_to_be32(op->addr.val);
-		if (op->addr.nbytes == 3)
-			addr >>= 8;
-		txbuf = &addr;
-		txlen = op->addr.nbytes;
-	}
-
-	if (txlen > CQSPI_STIG_DATA_LEN_MAX) {
-		printf("QSPI: Invalid input arguments txlen %u\n", txlen);
-		return -EINVAL;
-	}
 
 	if (priv->dtr)
 		opcode = op->cmd.opcode >> 8;
@@ -566,6 +670,27 @@ int cadence_qspi_apb_command_write(struct cadence_spi_priv *priv,
 		opcode = op->cmd.opcode;
 
 	reg |= opcode << CQSPI_REG_CMDCTRL_OPCODE_LSB;
+
+	/* setup ADDR BIT field */
+	if (op->addr.nbytes) {
+		writel(op->addr.val, priv->regbase + CQSPI_REG_CMDADDRESS);
+		/*
+		 * address bytes are zero indexed
+		 */
+		reg |= (((op->addr.nbytes - 1) &
+			  CQSPI_REG_CMDCTRL_ADD_BYTES_MASK) <<
+			  CQSPI_REG_CMDCTRL_ADD_BYTES_LSB);
+		reg |= (0x1 << CQSPI_REG_CMDCTRL_ADDR_EN_LSB);
+	}
+
+	/* Set up dummy cycles. */
+	dummy_clk = cadence_qspi_calc_dummy(op, priv->dtr);
+	if (dummy_clk > CQSPI_DUMMY_CLKS_MAX)
+		return -EOPNOTSUPP;
+
+	if (dummy_clk)
+		reg |= (dummy_clk & CQSPI_REG_CMDCTRL_DUMMY_MASK)
+		     << CQSPI_REG_CMDCTRL_DUMMY_LSB;
 
 	if (txlen) {
 		/* writing data = yes */
@@ -741,6 +866,74 @@ failrd:
 	return ret;
 }
 
+static int
+cadence_qspi_apb_direct_read_execute(struct cadence_spi_priv *priv,
+				     const struct spi_mem_op *op)
+{
+	loff_t from = op->addr.val;
+	loff_t from_aligned, to_aligned;
+	size_t len = op->data.nbytes;
+	size_t len_aligned;
+	u_char *buf = op->data.buf.in;
+	int ret;
+
+	cadence_qspi_apb_enable_linear_mode(true);
+
+	if (len < 16) {
+		memcpy_fromio(buf, priv->ahbbase + from, len);
+		if (!cadence_qspi_wait_idle(priv->regbase))
+			return -EIO;
+		return 0;
+	}
+
+	if (!cadence_qspi_apb_use_phy(priv, op)) {
+		if (dma_memcpy(buf, priv->ahbbase + from, len) < 0)
+			memcpy_fromio(buf, priv->ahbbase + from, len);
+
+		if (!cadence_qspi_wait_idle(priv->regbase))
+			return -EIO;
+		return 0;
+	}
+
+	/*
+	 * PHY reads must be 16-byte aligned, and they must be a multiple of 16
+	 * bytes.
+	 */
+	from_aligned = (from + 0xF) & ~0xF;
+	to_aligned = (from + len) & ~0xF;
+	len_aligned = to_aligned - from_aligned;
+
+	/* Read the unaligned part at the start. */
+	if (from != from_aligned) {
+		ret = dma_memcpy(buf, priv->ahbbase + from,
+				 from_aligned - from);
+		if (ret)
+			return ret;
+		buf += from_aligned - from;
+	}
+
+	if (len_aligned) {
+		cadence_qspi_apb_phy_enable(priv, true);
+		ret = dma_memcpy(buf, priv->ahbbase + from_aligned,
+				 len_aligned);
+		cadence_qspi_apb_phy_enable(priv, false);
+		if (ret)
+			return ret;
+		buf += len_aligned;
+	}
+
+	/* Now read the remaining part, if any. */
+	if (to_aligned != (from + len)) {
+		ret = dma_memcpy(buf, priv->ahbbase + to_aligned,
+				 (from + len) - to_aligned);
+		if (ret)
+			return ret;
+		buf += (from + len) - to_aligned;
+	}
+
+	return 0;
+}
+
 int cadence_qspi_apb_read_execute(struct cadence_spi_priv *priv,
 				  const struct spi_mem_op *op)
 {
@@ -748,17 +941,8 @@ int cadence_qspi_apb_read_execute(struct cadence_spi_priv *priv,
 	void *buf = op->data.buf.in;
 	size_t len = op->data.nbytes;
 
-	cadence_qspi_apb_enable_linear_mode(true);
-
-	if (priv->use_dac_mode && (from + len < priv->ahbsize)) {
-		if (len < 256 ||
-		    dma_memcpy(buf, priv->ahbbase + from, len) < 0) {
-			memcpy_fromio(buf, priv->ahbbase + from, len);
-		}
-		if (!cadence_qspi_wait_idle(priv->regbase))
-			return -EIO;
-		return 0;
-	}
+	if (priv->use_dac_mode && (from + len < priv->ahbsize))
+		return cadence_qspi_apb_direct_read_execute(priv, op);
 
 	return cadence_qspi_apb_indirect_read_execute(priv, len, buf);
 }
@@ -800,19 +984,20 @@ int cadence_qspi_apb_write_setup(struct cadence_spi_priv *priv,
 
 	writel(op->addr.val, priv->regbase + CQSPI_REG_INDIRECTWRSTARTADDR);
 
-	if (priv->dtr) {
-		/*
-		 * Some flashes like the cypress Semper flash expect a 4-byte
-		 * dummy address with the Read SR command in DTR mode, but this
-		 * controller does not support sending address with the Read SR
-		 * command. So, disable write completion polling on the
-		 * controller's side. spi-nor will take care of polling the
-		 * status register.
-		 */
-		reg = readl(priv->regbase + CQSPI_REG_WR_COMPLETION_CTRL);
-		reg |= CQSPI_REG_WR_DISABLE_AUTO_POLL;
-		writel(reg, priv->regbase + CQSPI_REG_WR_COMPLETION_CTRL);
-	}
+	/*
+	 * SPI NAND flashes require the address of the status register to be
+	 * passed in the Read SR command. Also, some SPI NOR flashes like the
+	 * cypress Semper flash expect a 4-byte dummy address in the Read SR
+	 * command in DTR mode.
+	 *
+	 * But this controller does not support address phase in the Read SR
+	 * command when doing auto-HW polling. So, disable write completion
+	 * polling on the controller's side. spinand and spi-nor will take
+	 * care of polling the status register.
+	 */
+	reg = readl(priv->regbase + CQSPI_REG_WR_COMPLETION_CTRL);
+	reg |= CQSPI_REG_WR_DISABLE_AUTO_POLL;
+	writel(reg, priv->regbase + CQSPI_REG_WR_COMPLETION_CTRL);
 
 	reg = readl(priv->regbase + CQSPI_REG_SIZE);
 	reg &= ~CQSPI_REG_SIZE_ADDRESS_MASK;

@@ -68,7 +68,7 @@ struct global_data {
 	 * @mem_clk: memory clock rate in Hz
 	 */
 	unsigned long mem_clk;
-#if defined(CONFIG_VIDEO)
+#if CONFIG_IS_ENABLED(VIDEO)
 	/**
 	 * @fb_base: base address of frame buffer memory
 	 */
@@ -359,7 +359,7 @@ struct global_data {
 	 */
 	struct membuff console_in;
 #endif
-#ifdef CONFIG_VIDEO
+#if CONFIG_IS_ENABLED(VIDEO)
 	/**
 	 * @video_top: top of video frame buffer area
 	 */
@@ -650,6 +650,10 @@ enum gd_flags {
 	 * @GD_FLG_FDT_CHANGED: Device tree change has been detected by tests
 	 */
 	GD_FLG_FDT_CHANGED = 0x100000,
+	/**
+	 * @GD_FLG_OF_TAG_MIGRATE: Device tree has old u-boot,dm- tags
+	 */
+	GD_FLG_OF_TAG_MIGRATE = 0x200000,
 };
 
 #endif /* __ASSEMBLY__ */

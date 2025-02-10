@@ -185,7 +185,6 @@ void elm_reset(void)
 		;
 }
 
-#ifdef ELM_BASE
 /**
  * elm_init - Initialize ELM module
  *
@@ -194,13 +193,13 @@ void elm_reset(void)
  */
 void elm_init(void)
 {
+#ifdef ELM_BASE
 	elm_cfg = (struct elm *)ELM_BASE;
 	elm_reset();
-}
 #endif
+}
 
-#if CONFIG_IS_ENABLED(SYS_NAND_SELF_INIT)
-
+#ifdef CONFIG_SYS_NAND_SELF_INIT
 static int elm_probe(struct udevice *dev)
 {
 #ifndef ELM_BASE

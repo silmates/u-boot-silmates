@@ -27,6 +27,9 @@
 #include <env.h>
 #include <elf.h>
 #include <soc.h>
+#include <wait_bit.h>
+
+#define CLKSTOP_TRANSITION_TIMEOUT_MS	10
 
 #if IS_ENABLED(CONFIG_SYS_K3_SPL_ATF)
 enum {
@@ -34,6 +37,9 @@ enum {
 	IMAGE_ID_OPTEE,
 	IMAGE_ID_SPL,
 	IMAGE_ID_DM_FW,
+	IMAGE_ID_FSSTUB_HS,
+	IMAGE_ID_FSSTUB_FS,
+	IMAGE_ID_FSSTUB_GP,
 	IMAGE_AMT,
 };
 
@@ -43,6 +49,9 @@ static const char *image_os_match[IMAGE_AMT] = {
 	"tee",
 	"U-Boot",
 	"DM",
+	"tifsstub-hs",
+	"tifsstub-fs",
+	"tifsstub-gp",
 };
 #endif
 
@@ -92,6 +101,59 @@ void mmr_unlock(phys_addr_t base, u32 partition)
 	/* Unlock the requested partition if locked using two-step sequence */
 	writel(CTRLMMR_LOCK_KICK0_UNLOCK_VAL, part_base + CTRLMMR_LOCK_KICK0);
 	writel(CTRLMMR_LOCK_KICK1_UNLOCK_VAL, part_base + CTRLMMR_LOCK_KICK1);
+}
+
+static void wkup_ctrl_remove_can_io_isolation(void)
+{
+	const void *wait_reg = (const void *)(WKUP_CTRL_MMR0_BASE +
+					      WKUP_CTRL_MMR_CANUART_WAKE_STAT1);
+	int ret;
+	u32 reg = 0;
+
+	/* Program magic word */
+	reg = readl(WKUP_CTRL_MMR0_BASE + WKUP_CTRL_MMR_CANUART_WAKE_CTRL);
+	reg |= WKUP_CTRL_MMR_CANUART_WAKE_CTRL_MW << WKUP_CTRL_MMR_CANUART_WAKE_CTRL_MW_SHIFT;
+	writel(reg, WKUP_CTRL_MMR0_BASE + WKUP_CTRL_MMR_CANUART_WAKE_CTRL);
+
+	/* Set enable bit. */
+	reg |= WKUP_CTRL_MMR_CANUART_WAKE_CTRL_MW_LOAD_EN;
+	writel(reg, WKUP_CTRL_MMR0_BASE + WKUP_CTRL_MMR_CANUART_WAKE_CTRL);
+
+       /* Clear enable bit. */
+	reg &= ~WKUP_CTRL_MMR_CANUART_WAKE_CTRL_MW_LOAD_EN;
+	writel(reg, WKUP_CTRL_MMR0_BASE + WKUP_CTRL_MMR_CANUART_WAKE_CTRL);
+
+	/* wait for CAN_ONLY_IO signal to be 0 */
+	ret = wait_for_bit_32(wait_reg,
+			      WKUP_CTRL_MMR_CANUART_WAKE_STAT1_CANUART_IO_MODE,
+			      false,
+			      CLKSTOP_TRANSITION_TIMEOUT_MS,
+			      false);
+	if (ret < 0)
+		return;
+
+	/* Reset magic word */
+	writel(0, WKUP_CTRL_MMR0_BASE + WKUP_CTRL_MMR_CANUART_WAKE_CTRL);
+
+	/* Remove WKUP IO isolation */
+	reg = readl(WKUP_CTRL_MMR0_BASE + WKUP_CTRL_MMR_PMCTRL_IO_0);
+	reg = reg & WKUP_CTRL_MMR_PMCTRL_IO_0_WRITE_MASK & ~WKUP_CTRL_MMR_PMCTRL_IO_0_GLOBAL_WUEN_0;
+	writel(reg, WKUP_CTRL_MMR0_BASE + WKUP_CTRL_MMR_PMCTRL_IO_0);
+
+	/* clear global IO isolation */
+	reg = readl(WKUP_CTRL_MMR0_BASE + WKUP_CTRL_MMR_PMCTRL_IO_0);
+	reg = reg & WKUP_CTRL_MMR_PMCTRL_IO_0_WRITE_MASK & ~WKUP_CTRL_MMR_PMCTRL_IO_0_IO_ISO_CTRL_0;
+	writel(reg, WKUP_CTRL_MMR0_BASE + WKUP_CTRL_MMR_PMCTRL_IO_0);
+
+	writel(0, WKUP_CTRL_MMR0_BASE + WKUP_CTRL_MMR_DEEPSLEEP_CTRL);
+	writel(0, WKUP_CTRL_MMR0_BASE + WKUP_CTRL_MMR_PMCTRL_IO_GLB);
+}
+
+void wkup_ctrl_remove_can_io_isolation_if_set(void)
+{
+	if (readl(WKUP_CTRL_MMR0_BASE + WKUP_CTRL_MMR_CANUART_WAKE_STAT1) &
+	    WKUP_CTRL_MMR_CANUART_WAKE_STAT1_CANUART_IO_MODE)
+		wkup_ctrl_remove_can_io_isolation();
 }
 
 bool is_rom_loaded_sysfw(struct rom_extended_boot_data *data)
@@ -162,7 +224,7 @@ int load_firmware(char *name_fw, char *name_loadaddr, u32 *loadaddr)
 	char *name = NULL;
 	int size = 0;
 
-	if (!IS_ENABLED(CONFIG_FS_LOADER))
+	if (!CONFIG_IS_ENABLED(FS_LOADER))
 		return 0;
 
 	*loadaddr = 0;
@@ -227,6 +289,31 @@ void __noreturn jump_to_image_no_args(struct spl_image_info *spl_image)
 	if (ret)
 		panic("%s: ATF failed to load on rproc (%d)\n", __func__, ret);
 
+#if (CONFIG_IS_ENABLED(FIT_IMAGE_POST_PROCESS) && IS_ENABLED(CONFIG_SYS_K3_SPL_ATF))
+	/* Authenticate ATF */
+	void *image_addr = (void *)fit_image_info[IMAGE_ID_ATF].image_start;
+
+	debug("%s: Authenticating image: addr=%lx, size=%ld, os=%s\n", __func__,
+	      fit_image_info[IMAGE_ID_ATF].image_start,
+	      fit_image_info[IMAGE_ID_ATF].image_len,
+	      image_os_match[IMAGE_ID_ATF]);
+
+	ti_secure_image_post_process(&image_addr,
+				     (size_t *)&fit_image_info[IMAGE_ID_ATF].image_len);
+
+	/* Authenticate OPTEE */
+	image_addr = (void *)fit_image_info[IMAGE_ID_OPTEE].image_start;
+
+	debug("%s: Authenticating image: addr=%lx, size=%ld, os=%s\n", __func__,
+	      fit_image_info[IMAGE_ID_OPTEE].image_start,
+	      fit_image_info[IMAGE_ID_OPTEE].image_len,
+	      image_os_match[IMAGE_ID_OPTEE]);
+
+	ti_secure_image_post_process(&image_addr,
+				     (size_t *)&fit_image_info[IMAGE_ID_OPTEE].image_len);
+
+#endif
+
 	if (!fit_image_info[IMAGE_ID_DM_FW].image_len &&
 	    !(size > 0 && valid_elf_image(loadaddr))) {
 		shut_cpu = 1;
@@ -288,9 +375,37 @@ void board_fit_image_post_process(const void *fit, int node, void **p_image,
 			break;
 		}
 	}
-#endif
 
-	ti_secure_image_post_process(p_image, p_size);
+	if (i < IMAGE_AMT && i > IMAGE_ID_DM_FW) {
+		int device_type = get_device_type();
+
+		if ((device_type == K3_DEVICE_TYPE_HS_SE &&
+		     strcmp(os, "tifsstub-hs")) ||
+		   (device_type == K3_DEVICE_TYPE_HS_FS &&
+		     strcmp(os, "tifsstub-fs")) ||
+		   (device_type == K3_DEVICE_TYPE_GP &&
+		     strcmp(os, "tifsstub-gp"))) {
+			*p_size = 0;
+		} else {
+			debug("tifsstub-type: %s\n", os);
+		}
+
+		return;
+	}
+	/*
+	 * Only DM and the DTBs are being authenticated here,
+	 * rest will be authenticated when A72 cluster is up
+	 */
+	if (i != IMAGE_ID_ATF && i != IMAGE_ID_OPTEE)
+#endif
+	{
+		ti_secure_image_check_binary(p_image, p_size);
+		ti_secure_image_post_process(p_image, p_size);
+	}
+#if IS_ENABLED(CONFIG_SYS_K3_SPL_ATF)
+	else
+		ti_secure_image_check_binary(p_image, p_size);
+#endif
 }
 #endif
 
@@ -351,6 +466,7 @@ int fdt_fixup_msmc_ram(void *blob, char *parent_path, char *node_name)
 		      subnode, addr, size);
 		if (addr + size > msmc_size ||
 		    !strncmp(fdt_get_name(blob, subnode, &len), "sysfw", 5) ||
+		    !strncmp(fdt_get_name(blob, subnode, &len), "tifs", 4)  ||
 		    !strncmp(fdt_get_name(blob, subnode, &len), "l3cache", 7)) {
 			fdt_del_node(blob, subnode);
 			debug("%s: deleting subnode %d\n", __func__, subnode);
@@ -472,26 +588,6 @@ int print_cpuinfo(void)
 }
 #endif
 
-bool soc_is_j721e(void)
-{
-	u32 soc;
-
-	soc = (readl(CTRLMMR_WKUP_JTAG_ID) &
-		JTAG_ID_PARTNO_MASK) >> JTAG_ID_PARTNO_SHIFT;
-
-	return soc == J721E;
-}
-
-bool soc_is_j7200(void)
-{
-	u32 soc;
-
-	soc = (readl(CTRLMMR_WKUP_JTAG_ID) &
-		JTAG_ID_PARTNO_MASK) >> JTAG_ID_PARTNO_SHIFT;
-
-	return soc == J7200;
-}
-
 #ifdef CONFIG_ARM64
 void board_prep_linux(struct bootm_headers *images)
 {
@@ -528,33 +624,47 @@ void disable_linefill_optimization(void)
 }
 #endif
 
-void remove_fwl_configs(struct fwl_data *fwl_data, size_t fwl_data_size)
+static void remove_fwl_regions(struct fwl_data fwl_data, size_t num_regions,
+			       enum k3_firewall_region_type fwl_type)
 {
-	struct ti_sci_msg_fwl_region region;
 	struct ti_sci_fwl_ops *fwl_ops;
 	struct ti_sci_handle *ti_sci;
-	size_t i, j;
+	struct ti_sci_msg_fwl_region region;
+	size_t j;
 
 	ti_sci = get_ti_sci_handle();
 	fwl_ops = &ti_sci->ops.fwl_ops;
-	for (i = 0; i < fwl_data_size; i++) {
-		for (j = 0; j <  fwl_data[i].regions; j++) {
-			region.fwl_id = fwl_data[i].fwl_id;
-			region.region = j;
-			region.n_permission_regs = 3;
 
-			fwl_ops->get_fwl_region(ti_sci, &region);
+	for (j = 0; j < fwl_data.regions; j++) {
+		region.fwl_id = fwl_data.fwl_id;
+		region.region = j;
+		region.n_permission_regs = 3;
 
-			if (region.control != 0) {
-				pr_debug("Attempting to disable firewall %5d (%25s)\n",
-					 region.fwl_id, fwl_data[i].name);
-				region.control = 0;
+		fwl_ops->get_fwl_region(ti_sci, &region);
 
-				if (fwl_ops->set_fwl_region(ti_sci, &region))
-					pr_err("Could not disable firewall %5d (%25s)\n",
-					       region.fwl_id, fwl_data[i].name);
-			}
+		/* Don't disable the background regions */
+		if (region.control != 0 &&
+		    ((region.control >> K3_FIREWALL_BACKGROUND_BIT) & 1) == fwl_type) {
+			debug("Attempting to disable firewall %5d (%25s)\n",
+			      region.fwl_id, fwl_data.name);
+			region.control = 0;
+
+			if (fwl_ops->set_fwl_region(ti_sci, &region))
+				pr_err("Could not disable firewall %5d (%25s)\n",
+				       region.fwl_id, fwl_data.name);
 		}
+	}
+}
+
+void remove_fwl_configs(struct fwl_data *fwl_data, size_t fwl_data_size)
+{
+	size_t i;
+
+	for (i = 0; i < fwl_data_size; i++) {
+		remove_fwl_regions(fwl_data[i], fwl_data[i].regions,
+				   K3_FIREWALL_REGION_FOREGROUND);
+		remove_fwl_regions(fwl_data[i], fwl_data[i].regions,
+				   K3_FIREWALL_REGION_BACKGROUND);
 	}
 }
 
@@ -574,8 +684,10 @@ void spl_enable_dcache(void)
 		ram_top = (phys_addr_t) 0x100000000;
 
 	gd->arch.tlb_addr = ram_top - gd->arch.tlb_size;
+	gd->arch.tlb_addr &= ~(0x10000 - 1);
 	debug("TLB table from %08lx to %08lx\n", gd->arch.tlb_addr,
 	      gd->arch.tlb_addr + gd->arch.tlb_size);
+	gd->relocaddr = gd->arch.tlb_addr;
 
 	dcache_enable();
 #endif
@@ -606,9 +718,13 @@ int misc_init_r(void)
 			printf("Failed to probe am65_cpsw_nuss driver\n");
 	}
 
-	/* Default FIT boot on non-GP devices */
-	if (get_device_type() != K3_DEVICE_TYPE_GP)
+	/* Default FIT boot on HS-SE devices */
+	if (get_device_type() == K3_DEVICE_TYPE_HS_SE) {
 		env_set("boot_fit", "1");
+		env_set("secure_rprocs", "1");
+	} else {
+		env_set("secure_rprocs", "0");
+	}
 
 	return 0;
 }

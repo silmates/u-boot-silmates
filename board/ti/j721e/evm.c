@@ -26,6 +26,9 @@
 #include <dm/uclass-internal.h>
 
 #include "../common/board_detect.h"
+#include "../common/k3-ddr-init.h"
+
+#define board_is_bboneai_64_b0()	(board_ti_k3_is("BBONEAI-64-B0-"))
 
 #define board_is_j721e_som()	(board_ti_k3_is("J721EX-PM1-SOM") || \
 				 board_ti_k3_is("J721EX-PM2-SOM"))
@@ -46,17 +49,6 @@ int board_init(void)
 	return 0;
 }
 
-int dram_init(void)
-{
-#ifdef CONFIG_PHYS_64BIT
-	gd->ram_size = 0x100000000;
-#else
-	gd->ram_size = 0x80000000;
-#endif
-
-	return 0;
-}
-
 phys_size_t board_get_usable_ram_top(phys_size_t total_size)
 {
 #ifdef CONFIG_PHYS_64BIT
@@ -66,23 +58,6 @@ phys_size_t board_get_usable_ram_top(phys_size_t total_size)
 #endif
 
 	return gd->ram_top;
-}
-
-int dram_init_banksize(void)
-{
-	/* Bank 0 declares the memory available in the DDR low region */
-	gd->bd->bi_dram[0].start = CFG_SYS_SDRAM_BASE;
-	gd->bd->bi_dram[0].size = 0x80000000;
-	gd->ram_size = 0x80000000;
-
-#ifdef CONFIG_PHYS_64BIT
-	/* Bank 1 declares the memory available in the DDR high region */
-	gd->bd->bi_dram[1].start = CFG_SYS_SDRAM_BASE1;
-	gd->bd->bi_dram[1].size = 0x80000000;
-	gd->ram_size = 0x100000000;
-#endif
-
-	return 0;
 }
 
 #ifdef CONFIG_SPL_LOAD_FIT
@@ -98,6 +73,10 @@ int board_fit_config_name_match(const char *name)
 		if (!strcmp(name, "k3-j721e-sk") ||
 		    !strcmp(name, "k3-j721e-r5-sk"))
 			return 0;
+	} else if (board_is_bboneai_64_b0()) {
+		if (!strcmp(name, "k3-j721e-beagleboneai64") ||
+		    !strcmp(name, "k3-j721e-r5-beagleboneai64"))
+			return 0;
 	}
 
 	return -1;
@@ -110,6 +89,9 @@ static void __maybe_unused detect_enable_hyperflash(void *blob)
 {
 	struct gpio_desc desc = {0};
 	char *hypermux_sel_gpio = (board_is_j721e_som()) ? "8" : "6";
+
+	if (!board_is_j721e_som() && !board_is_j7200_som())
+		return;
 
 	if (dm_gpio_lookup_name(hypermux_sel_gpio, &desc))
 		return;
@@ -453,6 +435,8 @@ static void setup_board_eeprom_env(void)
 		name = "j721e";
 	else if (board_is_j721e_sk())
 		name = "j721e-sk";
+	else if (board_is_bboneai_64_b0())
+		name = "BBONEAI-64-B0-";
 	else if (board_is_j7200_som())
 		name = "j7200";
 	else
@@ -511,6 +495,9 @@ static int __maybe_unused detect_SW3_1_state(void)
 		int ret;
 		char *hypermux_sel_gpio = (board_is_j721e_som()) ? "8" : "6";
 
+		if (!board_is_j721e_som() && !board_is_j7200_som())
+			return -ENODEV;
+
 		ret = dm_gpio_lookup_name(hypermux_sel_gpio, &desc);
 		if (ret) {
 			printf("error getting GPIO lookup name: %d\n", ret);
@@ -554,16 +541,22 @@ void spl_board_init(void)
 	}
 
 #ifdef CONFIG_ESM_K3
-	if (board_ti_k3_is("J721EX-PM2-SOM")) {
-		ret = uclass_get_device_by_driver(UCLASS_MISC,
-						  DM_DRIVER_GET(k3_esm), &dev);
+	if (board_ti_k3_is("J721EX-PM2-SOM") ||
+	    board_ti_k3_is("J7200X-PM2-SOM") ||
+	    board_is_bboneai_64_b0()) {
+		ret = uclass_get_device_by_name(UCLASS_MISC, "esm@700000", &dev);
 		if (ret)
-			printf("ESM init failed: %d\n", ret);
+			printf("MISC init for esm@700000 failed: %d\n", ret);
+
+		ret = uclass_get_device_by_name(UCLASS_MISC, "esm@40800000", &dev);
+		if (ret)
+			printf("MISC init for esm@40800000 failed: %d\n", ret);
 	}
 #endif
 
 #ifdef CONFIG_ESM_PMIC
-	if (board_ti_k3_is("J721EX-PM2-SOM")) {
+	if (board_ti_k3_is("J721EX-PM2-SOM") ||
+	    board_ti_k3_is("J7200X-PM2-SOM")) {
 		ret = uclass_get_device_by_driver(UCLASS_MISC,
 						  DM_DRIVER_GET(pmic_esm),
 						  &dev);

@@ -52,9 +52,11 @@ static void spinand_cache_op_adjust_colum(struct spinand_device *spinand,
 
 static int spinand_read_reg_op(struct spinand_device *spinand, u8 reg, u8 *val)
 {
-	struct spi_mem_op op = SPINAND_GET_FEATURE_OP(reg,
-						      spinand->scratchbuf);
 	int ret;
+	struct spi_mem_op op = spinand->ctrl_ops->ops.get_feature;
+
+	op.data.buf.out = spinand->scratchbuf;
+	memset(&op.addr.val, reg, op.addr.nbytes);
 
 	ret = spi_mem_exec_op(spinand->slave, &op);
 	if (ret)
@@ -66,10 +68,11 @@ static int spinand_read_reg_op(struct spinand_device *spinand, u8 reg, u8 *val)
 
 static int spinand_write_reg_op(struct spinand_device *spinand, u8 reg, u8 val)
 {
-	struct spi_mem_op op = SPINAND_SET_FEATURE_OP(reg,
-						      spinand->scratchbuf);
+	struct spi_mem_op op = spinand->ctrl_ops->ops.set_feature;
 
-	*spinand->scratchbuf = val;
+	op.data.buf.out = spinand->scratchbuf;
+	memset(&op.addr.val, reg, op.addr.nbytes);
+	memset(spinand->scratchbuf, val, op.data.nbytes);
 	return spi_mem_exec_op(spinand->slave, &op);
 }
 
@@ -207,9 +210,9 @@ static int spinand_init_quad_enable(struct spinand_device *spinand)
 	if (!(spinand->flags & SPINAND_HAS_QE_BIT))
 		return 0;
 
-	if (spinand->op_templates.read_cache->data.buswidth == 4 ||
-	    spinand->op_templates.write_cache->data.buswidth == 4 ||
-	    spinand->op_templates.update_cache->data.buswidth == 4)
+	if (spinand->data_ops.read_cache->data.buswidth == 4 ||
+	    spinand->data_ops.write_cache->data.buswidth == 4 ||
+	    spinand->data_ops.update_cache->data.buswidth == 4)
 		enable = true;
 
 	return spinand_upd_cfg(spinand, CFG_QUAD_ENABLE,
@@ -223,9 +226,9 @@ static int spinand_ecc_enable(struct spinand_device *spinand,
 			       enable ? CFG_ECC_ENABLE : 0);
 }
 
-static int spinand_write_enable_op(struct spinand_device *spinand)
+int spinand_write_enable_op(struct spinand_device *spinand)
 {
-	struct spi_mem_op op = SPINAND_WR_EN_DIS_OP(true);
+	struct spi_mem_op op = spinand->ctrl_ops->ops.write_enable;
 
 	return spi_mem_exec_op(spinand->slave, &op);
 }
@@ -235,15 +238,16 @@ static int spinand_load_page_op(struct spinand_device *spinand,
 {
 	struct nand_device *nand = spinand_to_nand(spinand);
 	unsigned int row = nanddev_pos_to_row(nand, &req->pos);
-	struct spi_mem_op op = SPINAND_PAGE_READ_OP(row);
+	struct spi_mem_op op = spinand->ctrl_ops->ops.page_read;
 
+	op.addr.val = row;
 	return spi_mem_exec_op(spinand->slave, &op);
 }
 
 static int spinand_read_from_cache_op(struct spinand_device *spinand,
 				      const struct nand_page_io_req *req)
 {
-	struct spi_mem_op op = *spinand->op_templates.read_cache;
+	struct spi_mem_op op = *spinand->data_ops.read_cache;
 	struct nand_device *nand = spinand_to_nand(spinand);
 	struct mtd_info *mtd = nanddev_to_mtd(nand);
 	struct nand_page_io_req adjreq = *req;
@@ -316,28 +320,34 @@ static int spinand_read_from_cache_op(struct spinand_device *spinand,
 static int spinand_write_to_cache_op(struct spinand_device *spinand,
 				     const struct nand_page_io_req *req)
 {
-	struct spi_mem_op op = *spinand->op_templates.write_cache;
+	struct spi_mem_op op = *spinand->data_ops.write_cache;
 	struct nand_device *nand = spinand_to_nand(spinand);
 	struct mtd_info *mtd = nanddev_to_mtd(nand);
 	struct nand_page_io_req adjreq = *req;
-	unsigned int nbytes = 0;
-	void *buf = NULL;
+	void *buf = spinand->databuf;
+	unsigned int nbytes;
 	u16 column = 0;
 	int ret;
 
-	memset(spinand->databuf, 0xff,
-	       nanddev_page_size(nand) +
-	       nanddev_per_page_oobsize(nand));
+	/*
+	 * Looks like PROGRAM LOAD (AKA write cache) does not necessarily reset
+	 * the cache content to 0xFF (depends on vendor implementation), so we
+	 * must fill the page cache entirely even if we only want to program
+	 * the data portion of the page, otherwise we might corrupt the BBM or
+	 * user data previously programmed in OOB area.
+	 */
+	nbytes = nanddev_page_size(nand) + nanddev_per_page_oobsize(nand);
+	memset(spinand->databuf, 0xff, nbytes);
+	adjreq.dataoffs = 0;
+	adjreq.datalen = nanddev_page_size(nand);
+	adjreq.databuf.out = spinand->databuf;
+	adjreq.ooblen = nanddev_per_page_oobsize(nand);
+	adjreq.ooboffs = 0;
+	adjreq.oobbuf.out = spinand->oobbuf;
 
-	if (req->datalen) {
+	if (req->datalen)
 		memcpy(spinand->databuf + req->dataoffs, req->databuf.out,
 		       req->datalen);
-		adjreq.dataoffs = 0;
-		adjreq.datalen = nanddev_page_size(nand);
-		adjreq.databuf.out = spinand->databuf;
-		nbytes = adjreq.datalen;
-		buf = spinand->databuf;
-	}
 
 	if (req->ooblen) {
 		if (req->mode == MTD_OPS_AUTO_OOB)
@@ -348,19 +358,11 @@ static int spinand_write_to_cache_op(struct spinand_device *spinand,
 		else
 			memcpy(spinand->oobbuf + req->ooboffs, req->oobbuf.out,
 			       req->ooblen);
-
-		adjreq.ooblen = nanddev_per_page_oobsize(nand);
-		adjreq.ooboffs = 0;
-		nbytes += nanddev_per_page_oobsize(nand);
-		if (!buf) {
-			buf = spinand->oobbuf;
-			column = nanddev_page_size(nand);
-		}
 	}
 
 	spinand_cache_op_adjust_colum(spinand, &adjreq, &column);
 
-	op = *spinand->op_templates.write_cache;
+	op = *spinand->data_ops.update_cache;
 	op.addr.val = column;
 
 	/*
@@ -386,12 +388,12 @@ static int spinand_write_to_cache_op(struct spinand_device *spinand,
 
 		/*
 		 * We need to use the RANDOM LOAD CACHE operation if there's
-		 * more than one iteration, because the LOAD operation resets
-		 * the cache to 0xff.
+		 * more than one iteration, because the LOAD operation might
+		 * reset the cache to 0xff.
 		 */
 		if (nbytes) {
 			column = op.addr.val;
-			op = *spinand->op_templates.update_cache;
+			op = *spinand->data_ops.update_cache;
 			op.addr.val = column;
 		}
 	}
@@ -404,8 +406,9 @@ static int spinand_program_op(struct spinand_device *spinand,
 {
 	struct nand_device *nand = spinand_to_nand(spinand);
 	unsigned int row = nanddev_pos_to_row(nand, &req->pos);
-	struct spi_mem_op op = SPINAND_PROG_EXEC_OP(row);
+	struct spi_mem_op op = spinand->ctrl_ops->ops.program_execute;
 
+	op.addr.val = row;
 	return spi_mem_exec_op(spinand->slave, &op);
 }
 
@@ -414,8 +417,9 @@ static int spinand_erase_op(struct spinand_device *spinand,
 {
 	struct nand_device *nand = &spinand->base;
 	unsigned int row = nanddev_pos_to_row(nand, pos);
-	struct spi_mem_op op = SPINAND_BLK_ERASE_OP(row);
+	struct spi_mem_op op = spinand->ctrl_ops->ops.block_erase;
 
+	op.addr.val = row;
 	return spi_mem_exec_op(spinand->slave, &op);
 }
 
@@ -466,7 +470,7 @@ static int spinand_read_id_op(struct spinand_device *spinand, u8 *buf)
 
 static int spinand_reset_op(struct spinand_device *spinand)
 {
-	struct spi_mem_op op = SPINAND_RESET_OP;
+	struct spi_mem_op op = spinand->ctrl_ops->ops.reset;
 	int ret;
 
 	ret = spi_mem_exec_op(spinand->slave, &op);
@@ -836,6 +840,16 @@ static const struct spinand_manufacturer *spinand_manufacturers[] = {
 	&winbond_spinand_manufacturer,
 };
 
+static const struct spinand_ctrl_ops spinand_default_ctrl_ops =
+			SPINAND_CTRL_OPS(SPINAND_1S,
+					 SPINAND_RESET_OP,
+					 SPINAND_GET_FEATURE_OP(0, NULL),
+					 SPINAND_SET_FEATURE_OP(0, NULL),
+					 SPINAND_WR_EN_DIS_OP(true),
+					 SPINAND_BLK_ERASE_OP(0),
+					 SPINAND_PAGE_READ_OP(0),
+					 SPINAND_PROG_EXEC_OP(0));
+
 static int spinand_manufacturer_detect(struct spinand_device *spinand)
 {
 	unsigned int i;
@@ -870,8 +884,8 @@ static void spinand_manufacturer_cleanup(struct spinand_device *spinand)
 }
 
 static const struct spi_mem_op *
-spinand_select_op_variant(struct spinand_device *spinand,
-			  const struct spinand_op_variants *variants)
+spinand_select_data_op_variant(struct spinand_device *spinand,
+				const struct spinand_op_variants *variants)
 {
 	struct nand_device *nand = spinand_to_nand(spinand);
 	unsigned int i;
@@ -901,6 +915,93 @@ spinand_select_op_variant(struct spinand_device *spinand,
 	}
 
 	return NULL;
+}
+
+static const struct spinand_ctrl_ops *
+spinand_select_ctrl_ops_variant(struct spinand_device *spinand,
+				const struct spinand_ctrl_ops_variants *variants,
+				const enum spinand_protocol protocol)
+{
+	unsigned int i;
+
+	for (i = 0; i < variants->nvariants; i++) {
+		const struct spinand_ctrl_ops *ctrl_ops =
+			&variants->ctrl_ops_list[i];
+
+		if (ctrl_ops->protocol != protocol)
+			continue;
+
+		if (!spi_mem_supports_op(spinand->slave,
+					 &ctrl_ops->ops.reset) ||
+		    !spi_mem_supports_op(spinand->slave,
+					 &ctrl_ops->ops.get_feature) ||
+		    !spi_mem_supports_op(spinand->slave,
+					 &ctrl_ops->ops.set_feature) ||
+		    !spi_mem_supports_op(spinand->slave,
+					 &ctrl_ops->ops.write_enable) ||
+		    !spi_mem_supports_op(spinand->slave,
+					 &ctrl_ops->ops.block_erase) ||
+		    !spi_mem_supports_op(spinand->slave,
+					 &ctrl_ops->ops.page_read) ||
+		    !spi_mem_supports_op(spinand->slave,
+					 &ctrl_ops->ops.program_execute))
+			continue;
+
+		return ctrl_ops;
+	}
+
+	return NULL;
+}
+
+static bool spinand_op_is_octal_dtr(const struct spi_mem_op *op)
+{
+	return  op->cmd.buswidth == 8 && op->cmd.dtr &&
+		op->addr.buswidth == 8 && op->addr.dtr &&
+		op->data.buswidth == 8 && op->data.dtr;
+}
+
+static int spinand_init_octal_dtr_enable(struct spinand_device *spinand)
+{
+	struct udevice *dev = spinand->slave->dev;
+	const struct spinand_ctrl_ops *octal_dtr_ctrl_ops;
+	int ret;
+
+	if (!(spinand->flags & SPINAND_HAS_OCTAL_DTR_BIT))
+		return 0;
+
+	if (!(spinand_op_is_octal_dtr(spinand->data_ops.read_cache) &&
+	      spinand_op_is_octal_dtr(spinand->data_ops.write_cache) &&
+	      spinand_op_is_octal_dtr(spinand->data_ops.update_cache)))
+		return 0;
+
+	octal_dtr_ctrl_ops = spinand_select_ctrl_ops_variant(spinand,
+					spinand->desc_entry->ctrl_ops_variants,
+					SPINAND_8D);
+
+	if (!octal_dtr_ctrl_ops)
+		return 0;
+
+	if (!spinand->manufacturer->ops->change_protocol) {
+		dev_info(dev,
+			 "Missing ->change_mode(), unable to switch mode\n");
+		return -EOPNOTSUPP;
+	}
+
+	ret = spinand->manufacturer->ops->change_protocol(spinand, SPINAND_8D);
+	if (ret) {
+		dev_err(dev,
+			"Failed to enable Octal DTR SPI mode (err = %d)\n",
+			ret);
+		return ret;
+	}
+
+	spinand->protocol = SPINAND_8D;
+	spinand->ctrl_ops = octal_dtr_ctrl_ops;
+
+	dev_dbg(dev,
+		"%s SPI NAND switched to Octal DTR SPI (8D-8D-8D) mode\n",
+		spinand->manufacturer->name);
+	return 0;
 }
 
 /**
@@ -937,24 +1038,25 @@ int spinand_match_and_init(struct spinand_device *spinand,
 		spinand->eccinfo = table[i].eccinfo;
 		spinand->flags = table[i].flags;
 		spinand->select_target = table[i].select_target;
+		spinand->desc_entry = &table[i];
 
-		op = spinand_select_op_variant(spinand,
-					       info->op_variants.read_cache);
+		op = spinand_select_data_op_variant(spinand,
+					info->data_ops_variants.read_cache);
 		if (!op)
 			return -ENOTSUPP;
 
-		spinand->op_templates.read_cache = op;
+		spinand->data_ops.read_cache = op;
 
-		op = spinand_select_op_variant(spinand,
-					       info->op_variants.write_cache);
+		op = spinand_select_data_op_variant(spinand,
+					info->data_ops_variants.write_cache);
 		if (!op)
 			return -ENOTSUPP;
 
-		spinand->op_templates.write_cache = op;
+		spinand->data_ops.write_cache = op;
 
-		op = spinand_select_op_variant(spinand,
-					       info->op_variants.update_cache);
-		spinand->op_templates.update_cache = op;
+		op = spinand_select_data_op_variant(spinand,
+					info->data_ops_variants.update_cache);
+		spinand->data_ops.update_cache = op;
 
 		return 0;
 	}
@@ -1038,6 +1140,9 @@ static int spinand_init(struct spinand_device *spinand)
 	if (!spinand->scratchbuf)
 		return -ENOMEM;
 
+	spinand->protocol = SPINAND_1S;
+	spinand->ctrl_ops = &spinand_default_ctrl_ops;
+
 	ret = spinand_detect(spinand);
 	if (ret)
 		goto err_free_bufs;
@@ -1087,6 +1192,10 @@ static int spinand_init(struct spinand_device *spinand)
 		if (ret)
 			goto err_free_bufs;
 	}
+
+	ret = spinand_init_octal_dtr_enable(spinand);
+	if (ret)
+		goto err_manuf_cleanup;
 
 	ret = nanddev_init(nand, &spinand_ops, THIS_MODULE);
 	if (ret)
@@ -1191,26 +1300,25 @@ err_spinand_cleanup:
 	return ret;
 }
 
-#ifndef __UBOOT__
 static int spinand_remove(struct udevice *slave)
 {
-	struct spinand_device *spinand;
+	struct spinand_device *spinand = dev_get_priv(slave);
 	struct mtd_info *mtd;
-	int ret;
 
-	spinand = spi_mem_get_drvdata(slave);
 	mtd = spinand_to_mtd(spinand);
 	free(mtd->name);
 
+#ifndef __UBOOT__
 	ret = mtd_device_unregister(mtd);
 	if (ret)
 		return ret;
-
+#endif
 	spinand_cleanup(spinand);
 
 	return 0;
 }
 
+#ifndef __UBOOT__
 static const struct spi_device_id spinand_ids[] = {
 	{ .name = "spi-nand" },
 	{ /* sentinel */ },
@@ -1252,4 +1360,6 @@ U_BOOT_DRIVER(spinand) = {
 	.of_match = spinand_ids,
 	.priv_auto	= sizeof(struct spinand_device),
 	.probe = spinand_probe,
+	.remove = spinand_remove,
+	.flags = DM_FLAG_OS_PREPARE,
 };

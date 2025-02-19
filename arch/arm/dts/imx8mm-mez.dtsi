@@ -103,17 +103,12 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		ethphy0: ethernet-phy@0 {
+		ethphy0: ethernet-phy@3 {
 			compatible = "ethernet-phy-ieee802.3-c22";
 			interrupt-parent = <&gpio1>;
 			interrupts = <7 IRQ_TYPE_LEVEL_LOW>;
 			micrel,led-mode = <0>;
-			reg = <0>;
-/*
-			reset-gpios = <&gpio1 6 GPIO_ACTIVE_LOW>;
-			reset-assert-us = <15000>;
-			reset-deassert-us = <100000>;
-*/
+			reg = <3>;
 		};
 	};
 };
@@ -133,8 +128,8 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 	};
-	
-	pmic: pmic@4b {
+
+	pmic {
 		compatible = "rohm,bd71837";
 		reg = <0x4b>;
 		pinctrl-names = "default";
@@ -439,8 +434,7 @@
 			MX8MM_IOMUXC_ENET_RXC_ENET1_RGMII_RXC		0x91
 			MX8MM_IOMUXC_ENET_RX_CTL_ENET1_RGMII_RX_CTL	0x91
 			MX8MM_IOMUXC_ENET_TX_CTL_ENET1_RGMII_TX_CTL	0x1f
-/*			MX8MM_IOMUXC_GPIO1_IO06_GPIO1_IO6		0x184	*//*0x19*/
-			MX8MM_IOMUXC_GPIO1_IO07_GPIO1_IO7		0x1c4	/*0x1c4*//*0x19*/
+			MX8MM_IOMUXC_GPIO1_IO07_GPIO1_IO7		0x1c4
 		>;
 	};
 

@@ -52,17 +52,16 @@
 /* ENET1 */
 #if defined(CONFIG_FEC_MXC)
 #define CONFIG_ETHPRIME                 "FEC"
-//#define PHY_ANEG_TIMEOUT 20000
+#define PHY_ANEG_TIMEOUT 				20000
 #define FEC_QUIRK_ENET_MAC
 
 #define CONFIG_FEC_XCV_TYPE             RGMII
-#define CONFIG_FEC_MXC_PHYADDR          -1
-#define IMX_FEC_BASE			0x30BE0000
+#define CONFIG_FEC_MXC_PHYADDR          3
+#define IMX_FEC_BASE					0x30BE0000
 
 #define CONFIG_IPADDR			192.168.29.2
 #define CONFIG_NETMASK			255.255.255.0
 #define CONFIG_SERVERIP			192.168.29.1
-
 #endif
 
 
@@ -300,7 +299,7 @@
 //#define CONFIG_SYS_I2C_EEPROM_ADDR 	0x50
 //#define CONFIG_SYS_I2C_EEPROM_ADDR_LEN	1
 //#define CONFIG_SYS_EEPROM_PAGE_WRITE_DELAY_MS	5
-#define CONFIG_SYS_I2C_EEPROM_NXID
+// #define CONFIG_SYS_I2C_EEPROM_NXID
 
 
 #endif

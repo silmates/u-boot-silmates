@@ -84,6 +84,10 @@
 	u-boot,dm-spl;
 };
 
+&pinctrl_wdog {
+	u-boot,dm-spl;
+};
+
 &uart4 {
 	u-boot,dm-spl;
 };
@@ -138,11 +142,11 @@
 	u-boot,dm-spl;
 };
 
-&{/soc@0/bus@30800000/i2c@30a20000/pmic@4b} {
+&{/soc@0/bus@30800000/i2c@30a20000/pmic} {
 	u-boot,dm-spl;
 };
 
-&{/soc@0/bus@30800000/i2c@30a20000/pmic@4b/regulators} {
+&{/soc@0/bus@30800000/i2c@30a20000/pmic/regulators} {
 	u-boot,dm-spl;
 };
 

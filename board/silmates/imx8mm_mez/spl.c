@@ -201,7 +201,7 @@ int power_init_board(void)
 #ifdef CONFIG_DM_PMIC
 	struct udevice *dev;
 
-	ret = pmic_get("pmic@4b", &dev);
+	ret = pmic_get("pmic", &dev);
 	if (ret == -ENODEV) {
 		puts("No pmic found\n");
 		return ret;

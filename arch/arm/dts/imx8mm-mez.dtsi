@@ -48,7 +48,8 @@
 	};
 
 	rm67199_panel {
-		compatible = "boe,nt156whm_n44";
+/*		compatible = "boe,nt156whm_n44";*/
+		compatible = "auo,b156han02_1_0A";
 		panel-width-mm = <344>;
 		panel-height-mm = <193>;
 /*

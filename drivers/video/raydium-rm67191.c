@@ -32,6 +32,7 @@ enum panel_type {
 	PANEL_TYPE_RM671199,
 	PANEL_TYPE_ILI9881C,
 	PANEL_TYPE_NT156WHM_N44,
+	PANEL_TYPE_B156HAN02_1_0A,
 };
 
 struct rad_platform_data {
@@ -488,7 +489,6 @@ static const struct display_timing ili9881c_default_timing = {
 		 DISPLAY_FLAGS_PIXDATA_NEGEDGE,
 };
 
-
 static const struct display_timing nt156whm_n44_default_timing = {
 	.pixelclock.typ		= 76500000,//148500000,
 	.hactive.typ		= 1366,
@@ -501,10 +501,20 @@ static const struct display_timing nt156whm_n44_default_timing = {
 	.vsync_len.typ		= 6,
 	.flags = DISPLAY_FLAGS_HSYNC_LOW |
 		 DISPLAY_FLAGS_VSYNC_LOW,
-/*		  |
-		 DISPLAY_FLAGS_DE_LOW |
-		 DISPLAY_FLAGS_PIXDATA_NEGEDGE,
-*/
+};
+
+static const struct display_timing b156han02_1_0A_default_timing = {
+	.pixelclock.typ		= 141000000,
+	.hactive.typ		= 1920,
+	.hfront_porch.typ	= 108,
+	.hback_porch.typ	= 10,//166,
+	.hsync_len.typ		= 48,
+	.vactive.typ		= 1080,
+	.vfront_porch.typ	= 10,
+	.vback_porch.typ	= 26,//46,
+	.vsync_len.typ		= 10,
+	.flags = DISPLAY_FLAGS_HSYNC_LOW |
+		 DISPLAY_FLAGS_VSYNC_LOW,
 };
 
 static u8 color_format_from_dsi_format(enum mipi_dsi_pixel_format format)
@@ -763,6 +773,26 @@ static int nt156whm_n44_enable(struct udevice *dev)
 	return 0;
 }
 
+
+static int b156han02_1_0A_enable(struct udevice *dev)
+{
+	struct mipi_dsi_panel_plat *plat = dev_get_plat(dev);
+	struct mipi_dsi_device *dsi = plat->device;
+/*	struct rm67191_panel_priv *priv = dev_get_priv(dev);
+	u8 color_format = color_format_from_dsi_format(priv->format);
+	u16 brightness;
+	int ret;
+*/
+	dsi->mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_SYNC_PULSE;
+//	dsi->mode_flags = MIPI_DSI_MODE_VIDEO_HSE | MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_SYNC_PULSE;
+//	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
+
+	mdelay(10);
+//	mdelay(120);
+//	mdelay(100);
+	return 0;
+}
+
 static int ili9881c_enable(struct udevice *dev)
 {
 	struct rm67191_panel_priv *priv = dev_get_priv(dev);
@@ -979,11 +1009,18 @@ static const struct rad_platform_data boe_nt156whm_n44 = {
 	.type = PANEL_TYPE_NT156WHM_N44,
 };
 
+static const struct rad_platform_data auo_b156han02_1_0A = {
+	.enable = &b156han02_1_0A_enable,
+	.timing = &b156han02_1_0A_default_timing,
+	.type = PANEL_TYPE_B156HAN02_1_0A,
+};
+
 static const struct udevice_id rm67191_panel_ids[] = {
 	{ .compatible = "raydium,rm67191", .data = (ulong)&rad_rm67191 },
 	{ .compatible = "raydium,rm67199", .data = (ulong)&rad_rm67199 },
 	{ .compatible = "ilitek,ili9881c", .data = (ulong)&ili_ili9881c },
 	{ .compatible = "boe,nt156whm_n44", .data = (ulong)&boe_nt156whm_n44 },
+	{ .compatible = "auo,b156han02_1_0A", .data = (ulong)&auo_b156han02_1_0A },
 	{ }
 };
 

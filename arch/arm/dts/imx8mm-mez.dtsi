@@ -110,6 +110,11 @@
 			interrupts = <7 IRQ_TYPE_LEVEL_LOW>;
 			micrel,led-mode = <0>;
 			reg = <3>;
+
+			/* PHY reset GPIO */
+			reset-gpios = <&gpio1 6 GPIO_ACTIVE_LOW>;
+			reset-assert-us = <10000>;
+			reset-deassert-us = <10000>;
 		};
 	};
 };
@@ -418,6 +423,7 @@
 			MX8MM_IOMUXC_GPIO1_IO15_USB2_OTG_OC	0x49
 		>;
 	};
+
 	/* rgmii */
 	pinctrl_fec1: fec1grp {
 		fsl,pins = <
@@ -436,6 +442,7 @@
 			MX8MM_IOMUXC_ENET_RX_CTL_ENET1_RGMII_RX_CTL	0x91
 			MX8MM_IOMUXC_ENET_TX_CTL_ENET1_RGMII_TX_CTL	0x1f
 			MX8MM_IOMUXC_GPIO1_IO07_GPIO1_IO7		0x1c4
+			MX8MM_IOMUXC_GPIO1_IO06_GPIO1_IO6		0x1c4
 		>;
 	};
 

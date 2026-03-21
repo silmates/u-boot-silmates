@@ -11,7 +11,12 @@
 / {
 	chosen {
 		stdout-path = &uart4;
+		silmates,eeprom = &eeprom_som;
 	};
+
+    aliases {
+        silmates,eeprom0 = &eeprom_som;
+    };
 
 	memory@40000000 {
 		device_type = "memory";
@@ -126,13 +131,16 @@
 	pinctrl-0 = <&pinctrl_i2c1>;
 	status = "okay";
 
-    	eeprom_som: eeprom@50 {
-		compatible = "microchip,24c02";
-		pagesize = <16>;
-		read-only;
+	eeprom_som: eeprom@50 {
+		/* We have a Microchip 24AA025E48T, but we must use a supported model
+		as a generic fallback (atmel,24c01) and then set our needed
+		parameters in DT */
+		/* i2c-eeprom needs to be first for U-boot to recognize it	*/
+		compatible = "i2c-eeprom", "microchip,24aa025e48t", "atmel,24c01";
 		reg = <0x50>;
+		pagesize = <16>;
 		#address-cells = <1>;
-		#size-cells = <1>;
+        #size-cells = <1>;
 	};
 
 	pmic {
@@ -301,25 +309,10 @@
 
 /* I2C3 */
 &i2c3 {
-	clock-frequency = <100000>;
+	clock-frequency = <400000>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_i2c3>;
 	status = "okay";
-/*
-	lt9711_bridge: lt9711@41 {
-		compatible = "lontium,lt9711";
-		reg = <0x41>;
-		lt,addr-cec = <0x3c>;
-		lt,dsi-lanes = <4>;
-		status = "okay";
-
-		port {
-			lt9711_from_dsim: endpoint {
-				remote-endpoint = <&dsim_to_lt9711>;
-			};
-		};
-	};
-*/
 };
 
 /* SAI2 AUDIO I2S */

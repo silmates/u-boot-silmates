@@ -24,6 +24,8 @@
 #include <imx_sip.h>
 #include <linux/arm-smccc.h>
 #include <linux/delay.h>
+#include "../common/board.h"
+
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -278,34 +280,6 @@ int board_ehci_usb_phy_mode(struct udevice *dev)
 #if defined(CONFIG_OF_LIBFDT) && defined(CONFIG_OF_BOARD_SETUP)
 int ft_board_setup(void *blob, struct bd_info *bd)
 {
-//	const char *canoscpath = "/oscillator";
-//	int freq = 40000000;	/* 40 MHz is used on most variants */
-//	int canoscoff, ret;
-	int ret;
-
-//	canoscoff = fdt_path_offset(blob, canoscpath);
-//	if (canoscoff < 0)	/* No CAN oscillator found. */
-//		goto exit;
-
-	/*
-	 * The following "prodid" (PID4 in Toradex naming) use
-	 * a 20MHz CAN oscillator:
-	 * - 0055, V1.1A, V1.1B, V1.1C and V1.1D
-	 * - 0059, V1.1A and V1.1B
-	 */
-//	if ((sm_hw_tag.ver_major == 1 && sm_hw_tag.ver_minor == 1) &&
-//	    ((sm_hw_tag.prodid == VERDIN_IMX8MMQ_IT &&
-//	      sm_hw_tag.ver_assembly <= 1) ||	/* 0059 rev. A or B */
-//	     (sm_hw_tag.prodid == VERDIN_IMX8MMQ_WIFI_BT_IT &&
-//	      sm_hw_tag.ver_assembly <= 3))) {	/* 0055 rev. A/B/C/D */
-//		freq = 20000000;
-//	}
-
-//	ret = fdt_setprop_u32(blob, canoscoff, "clock-frequency", freq);
-//	if (ret < 0) {
-//		printf("Failed to set CAN oscillator clock-frequency, ret=%d\n",
-//		       ret);
-//	}
 
 exit:
 	return ft_common_board_setup(blob, bd);
@@ -337,12 +311,20 @@ int board_late_init(void)
 //	board_late_mmc_env_init();
 //#endif
 
-	if (IS_ENABLED(CONFIG_ENV_VARS_UBOOT_RUNTIME_CONFIG)) {
-		env_set("board_name", "MEZ");
-		env_set("board_rev", "iMX8MM");
-	}
+	silmates_read_eeprom();
 
-	return 0;
+	// if (IS_ENABLED(CONFIG_ENV_VARS_UBOOT_RUNTIME_CONFIG)) {
+	// 	env_set("board_name", "MEZ");
+	// 	env_set("board_rev", "iMX8MM");
+	// }
+
+	env_set("tee", "no");
+#ifdef CONFIG_IMX_OPTEE
+	env_set("tee", "yes");
+#endif
+
+return 0;
+	return board_late_init_silmates();
 }
 
 int board_phys_sdram_size(phys_size_t *size)

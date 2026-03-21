@@ -16,11 +16,6 @@
 		stdout-path = &uart4;
 		bootargs = "console=ttymxc3,115200 earlycon=ec_imx6q,0x30a60000,115200";
 	};
-
-	aliases {
-		eeprom0 = &eeprom_som;
-	};
-
 	regulators {
 		compatible = "simple-bus";
 		#address-cells = <1>;

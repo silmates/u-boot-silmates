@@ -129,77 +129,66 @@
 		"booti ${loadaddr} - ${fdt_addr_r}"
 
 #else
-#define CONFIG_EXTRA_ENV_SETTINGS		\
-	CONFIG_MFG_ENV_SETTINGS \
-	BOOTENV \
-	JAILHOUSE_ENV \
-	SR_IR_V2_COMMAND \
-	"prepare_mcore=setenv mcore_clk clk-imx8mm.mcore_booted;\0" \
-	"scriptaddr=0x43500000\0" \
-	"kernel_addr_r=" __stringify(CONFIG_SYS_LOAD_ADDR) "\0" \
-	"bsp_script=boot.scr\0" \
-	"image=Image\0" \
-	"splashimage=0x50000000\0" \
-	"console=ttymxc3,115200\0" \
-	"fdt_addr_r=0x43000000\0"			\
-	"fdt_addr=0x43000000\0"			\
-	"fdt_high=0xffffffffffffffff\0"		\
-	"boot_fit=no\0" \
-	"fdtfile=" CONFIG_DEFAULT_FDT_FILE "\0" \
-	"bootm_size=0x10000000\0" \
-	"mmcdev="__stringify(CONFIG_SYS_MMC_ENV_DEV)"\0" \
-	"mmcpart=1\0" \
-	"mmcroot=" CONFIG_MMCROOT " rootwait rw\0" \
-	"mmcautodetect=yes\0" \
-	"mmcargs=setenv bootargs ${jh_clk} ${mcore_clk} console=${console} root=${mmcroot}\0 " \
-	"loadbootscript=fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} ${bsp_script};\0" \
-	"bootscript=echo Running bootscript from mmc ...; " \
-		"source\0" \
-	"loadimage=fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} ${image}\0" \
-	"loadfdt=fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr_r} ${fdtfile}\0" \
-	"mmcboot=echo Booting from mmc ...; " \
-		"run mmcargs; " \
-		"if test ${boot_fit} = yes || test ${boot_fit} = try; then " \
-			"bootm ${loadaddr}; " \
-		"else " \
-			"if run loadfdt; then " \
-				"booti ${loadaddr} - ${fdt_addr_r}; " \
-			"else " \
-				"echo WARN: Cannot load the DT; " \
-			"fi; " \
-		"fi;\0" \
-	"netargs=setenv bootargs ${jh_clk} ${mcore_clk} console=${console} " \
-		"root=/dev/nfs " \
-		"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0" \
-	"netboot=echo Booting from net ...; " \
-		"run netargs;  " \
-		"if test ${ip_dyn} = yes; then " \
-			"setenv get_cmd dhcp; " \
-		"else " \
-			"setenv get_cmd tftp; " \
-		"fi; " \
-		"${get_cmd} ${loadaddr} ${image}; " \
-		"if test ${boot_fit} = yes || test ${boot_fit} = try; then " \
-			"bootm ${loadaddr}; " \
-		"else " \
-			"if ${get_cmd} ${fdt_addr_r} ${fdtfile}; then " \
-				"booti ${loadaddr} - ${fdt_addr_r}; " \
-			"else " \
-				"echo WARN: Cannot load the DT; " \
-			"fi; " \
-		"fi;\0" \
-	"bsp_bootcmd=echo Running BSP bootcmd ...; " \
-		"mmc dev ${mmcdev}; if mmc rescan; then " \
-		   "if run loadbootscript; then " \
-			   "run bootscript; " \
-		   "else " \
-			   "if run loadimage; then " \
-				   "run mmcboot; " \
-			   "else run netboot; " \
-			   "fi; " \
-		   "fi; " \
-	   "fi;"
-	   
+#define CONFIG_EXTRA_ENV_SETTINGS        \
+    CONFIG_MFG_ENV_SETTINGS \
+    BOOTENV \
+    JAILHOUSE_ENV \
+    SR_IR_V2_COMMAND \
+    "prepare_mcore=setenv mcore_clk clk-imx8mm.mcore_booted;\0" \
+    "scriptaddr=0x43500000\0" \
+    "kernel_addr_r=" __stringify(CONFIG_SYS_LOAD_ADDR) "\0" \
+    "bsp_script=boot.scr\0" \
+    "image=Image\0" \
+    "splashimage=0x50000000\0" \
+    "splashpos=m,m\0" \
+    "console=ttymxc3,115200\0" \
+    "fdt_addr_r=0x43000000\0" \
+    "fdt_addr=0x43000000\0" \
+    "fdt_high=0xffffffffffffffff\0" \
+    "boot_fit=no\0" \
+    "fdtfile=imx8mm-mez.dtb\0" \
+    "bootm_size=0x10000000\0" \
+    "mmcdev="__stringify(CONFIG_SYS_MMC_ENV_DEV)"\0" \
+    "mmcpart=1\0" \
+    "mmcroot=" CONFIG_MMCROOT " rootwait rw\0" \
+    "mmcautodetect=yes\0" \
+    "ip_dyn=no\0" \
+    "ipaddr=192.168.10.10\0" \
+    "serverip=192.168.10.1\0" \
+    "gatewayip=192.168.10.1\0" \
+    "netmask=255.255.255.0\0" \
+    "bootfile=Image\0" \
+    "loadaddr=0x40000000\0" \
+    "fdtaddr=0x48000000\0" \
+    "nfsroot=/mnt/storage/imx-development/targetNFS\0" \
+    "netargs=setenv bootargs console=ttymxc3,115200 earlycon loglevel=7 root=/dev/nfs rw " \
+        "ip=${ipaddr}:${serverip}:${gatewayip}:${netmask}::eth0:off " \
+        "nfsroot=${serverip}:${nfsroot},vers=4,tcp rootwait audit=1 " \
+        "logo.nologo=0 fbcon=nodefer fbcon=logo-pos:center fbcon=logo-count:1\0" \
+    "netboot=echo Booting from network...; " \
+        "tftp ${loadaddr} ${bootfile}; " \
+        "tftp ${fdtaddr} ${fdtfile}; " \
+        "run netargs; " \
+        "booti ${loadaddr} - ${fdtaddr}\0" \
+    "mmcargs=setenv bootargs ${jh_clk} ${mcore_clk} console=${console} root=${mmcroot}\0" \
+    "loadimage=fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} ${image}\0" \
+    "loadfdt=fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr_r} ${fdtfile}\0" \
+    "splashfile=silmates.bmp\0" \
+    "loadsplash=fatload mmc ${mmcdev}:${mmcpart} ${splashimage} ${splashfile};\0" \
+    "splashcmd=run loadsplash; bmp display ${splashimage};\0" \
+    "mmcboot=echo Booting from mmc ...; " \
+        "run splashcmd; " \
+        "run mmcargs; " \
+        "if run loadfdt; then " \
+            "booti ${loadaddr} - ${fdt_addr_r}; " \
+        "else " \
+            "echo WARN: Cannot load the DT; " \
+        "fi;\0" \
+        "loadbootscript=fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} ${bsp_script};\0" \
+        "loadsplash=fatload mmc ${mmcdev}:${mmcpart} ${splashimage} ${splashfile};\0" \
+	"bootscript=echo Running bootscript...; source ${loadaddr}\0" \
+	"\0"
+
 
 #ifdef CONFIG_BOOTCOMMAND
 #undef CONFIG_BOOTCOMMAND

@@ -140,7 +140,7 @@
 		reg = <0x50>;
 		pagesize = <16>;
 		#address-cells = <1>;
-        #size-cells = <1>;
+                #size-cells = <1>;
 	};
 
 	pmic {

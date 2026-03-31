@@ -161,16 +161,17 @@
     "loadaddr=0x40000000\0" \
     "fdtaddr=0x48000000\0" \
     "nfsroot=/mnt/storage/imx-development/targetNFS\0" \
-    "netargs=setenv bootargs console=ttymxc3,115200 earlycon loglevel=7 root=/dev/nfs rw " \
+    "netargs=setenv bootargs console=ttymxc3,115200 console=tty1 quiet loglevel=0 root=/dev/nfs rw " \
         "ip=${ipaddr}:${serverip}:${gatewayip}:${netmask}::eth0:off " \
         "nfsroot=${serverip}:${nfsroot},vers=4,tcp rootwait audit=1 " \
-        "logo.nologo=0 fbcon=nodefer fbcon=logo-pos:center fbcon=logo-count:1\0" \
+        "logo.nologo=0 fbcon=logo-pos:center fbcon=logo-count:1\0" \
     "netboot=echo Booting from network...; " \
         "tftp ${loadaddr} ${bootfile}; " \
         "tftp ${fdtaddr} ${fdtfile}; " \
         "run netargs; " \
         "booti ${loadaddr} - ${fdtaddr}\0" \
-    "mmcargs=setenv bootargs ${jh_clk} ${mcore_clk} console=${console} root=${mmcroot}\0" \
+    "mmcargs=setenv bootargs ${jh_clk} ${mcore_clk} console=${console} console=tty1 quiet loglevel=0 root=${mmcroot} \
+    logo.nologo=0 fbcon=logo-pos:center fbcon=logo-count:1\0" \
     "loadimage=fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} ${image}\0" \
     "loadfdt=fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr_r} ${fdtfile}\0" \
     "splashfile=silmates.bmp\0" \

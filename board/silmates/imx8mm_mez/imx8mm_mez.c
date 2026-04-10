@@ -129,6 +129,7 @@ static void setup_iomux_fec(void)
 	gpio_direction_output(FEC_RST_PAD, 0);
 	udelay(1000);
 	gpio_direction_output(FEC_RST_PAD, 1);
+	udelay(1000);
 }
 
 static int setup_fec(void)
@@ -323,8 +324,7 @@ int board_late_init(void)
 	env_set("tee", "yes");
 #endif
 
-return 0;
-	return board_late_init_silmates();
+return board_late_init_silmates();
 }
 
 int board_phys_sdram_size(phys_size_t *size)

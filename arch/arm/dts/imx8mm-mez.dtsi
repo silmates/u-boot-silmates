@@ -109,12 +109,12 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		ethphy0: ethernet-phy@3 {
+		ethphy0: ethernet-phy@0 {
 			compatible = "ethernet-phy-ieee802.3-c22";
 			interrupt-parent = <&gpio1>;
 			interrupts = <7 IRQ_TYPE_LEVEL_LOW>;
 			micrel,led-mode = <0>;
-			reg = <3>;
+			reg = <0>;
 
 			/* PHY reset GPIO */
 			reset-gpios = <&gpio1 6 GPIO_ACTIVE_LOW>;

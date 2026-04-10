@@ -56,7 +56,7 @@
 #define FEC_QUIRK_ENET_MAC
 
 #define CONFIG_FEC_XCV_TYPE             RGMII
-#define CONFIG_FEC_MXC_PHYADDR          3
+#define CONFIG_FEC_MXC_PHYADDR          0
 #define IMX_FEC_BASE					0x30BE0000
 
 #define CONFIG_IPADDR			192.168.29.2

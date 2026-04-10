@@ -211,9 +211,11 @@ __maybe_unused int silmates_read_eeprom(void)
 
 		/* Ignoring return value for supporting multiple chips */
 		silmates_read_eeprom_single(name_buf, desc);
-
-		silmates_board_read_rom_ethaddr(name_buf,desc->mac_addr[0]);
 	}
+
+	snprintf(name_buf, sizeof(name_buf), "silmates,eeprom0");
+	desc = &board_info[0];
+	silmates_board_read_rom_ethaddr(name_buf,desc->mac_addr[0]);
 
 	/*
 	 * Consider to clean board_info structure when board/cards are not
@@ -263,7 +265,6 @@ void *board_fdt_blob_setup(int *err)
 #endif
 
 int board_late_init_silmates(void)
-// int misc_init_r(void)
 {
 	int i, id, macid = 0;
 	struct silmates_board_description *desc;
@@ -272,16 +273,9 @@ int board_late_init_silmates(void)
 	env_set_addr("bootm_low", (void *)gd->ram_base);
 	env_set_addr("bootm_size", (void *)bootm_size);
 
-	printf("%s: %d \n", __func__,highest_id);
 	id = 0;
 	desc = &board_info[id];
 
-	printf("%s(%d): %X \n", __func__,id,desc->header);
-	printf("%s(%d): %s \n", __func__,id,desc->manufacturer);
-	printf("%s(%d): %s \n", __func__,id,desc->name);
-	printf("%s(%d): %s \n", __func__,id,desc->revision);
-	printf("%s(%d): %s \n", __func__,id,desc->serial);
-	printf("%s(%d): %pM \n", __func__,id,desc->mac_addr);
 	if (desc && desc->header == EEPROM_HEADER_MAGIC) {
 		if (desc->manufacturer[0])
 			env_set("manufacturer", desc->manufacturer);
@@ -291,16 +285,13 @@ int board_late_init_silmates(void)
 			env_set("board_rev", desc->revision);
 		if (desc->serial[0])
 			env_set("serial#", desc->serial);
-
-		i=id;
-		if (is_valid_ethaddr((const u8 *)desc->mac_addr[0]))
-			eth_env_set_enetaddr("ethaddr", desc->mac_addr[0]);
 	}
 
-	printf("MANU ENV: %s\n", env_get("manufacturer"));
-	printf("NAME ENV: %s\n", env_get("board_name"));
-	printf("REV ENV: %s\n", env_get("board_rev"));
-	printf("SERIAL ENV: %s\n", env_get("serial#"));
+	u8 *mac = desc->mac_addr[0];
+	// printf("ethaddr set: %pM\n", mac);
+	if (is_valid_ethaddr(mac))
+		eth_env_set_enetaddr("ethaddr", mac);
+
 	return 0;
 }
 

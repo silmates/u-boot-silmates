@@ -16,32 +16,7 @@
 		stdout-path = &uart4;
 		bootargs = "console=ttymxc3,115200 earlycon=ec_imx6q,0x30a60000,115200";
 	};
-	regulators {
-		compatible = "simple-bus";
-		#address-cells = <1>;
-		#size-cells = <0>;
 
-		reg_system_3v3: regulator-system-3v3 {
-			compatible = "regulator-fixed";
-			enable-active-high;
-			regulator-min-microvolt = <3300000>;
-			regulator-max-microvolt = <3300000>;
-			regulator-boot-on;
-			regulator-always-on;
-			regulator-name = "+3.3 SYSTEM";
-		};
-
-		reg_system_5v: regulator-system-5v {
-			compatible = "regulator-fixed";
-			enable-active-high;
-			regulator-min-microvolt = <5000000>;
-			regulator-max-microvolt = <5000000>;
-			regulator-boot-on;
-			regulator-always-on;
-			regulator-name = "+5 SYSTEM";
-		};
-	};
-	
 	backlight: backlight {
 		pinctrl-names = "default";
 		pinctrl-0 = <&pinctrl_backlight>;
@@ -100,7 +75,7 @@
 	/* eMMC */
 	pinctrl_usdhc3: usdhc3grp {
 		fsl,pins = <
-			MX8MM_IOMUXC_NAND_WE_B_USDHC3_CLK               0x40000190
+			MX8MM_IOMUXC_NAND_WE_B_USDHC3_CLK               0x190
 			MX8MM_IOMUXC_NAND_WP_B_USDHC3_CMD               0x1d0
 			MX8MM_IOMUXC_NAND_DATA04_USDHC3_DATA0           0x1d0
 			MX8MM_IOMUXC_NAND_DATA05_USDHC3_DATA1           0x1d0
@@ -118,7 +93,7 @@
 	/* eMMC 100 MHz */
 	pinctrl_usdhc3_100mhz: usdhc3-100mhzgrp {
 		fsl,pins = <
-			MX8MM_IOMUXC_NAND_WE_B_USDHC3_CLK               0x40000194
+			MX8MM_IOMUXC_NAND_WE_B_USDHC3_CLK               0x194
 			MX8MM_IOMUXC_NAND_WP_B_USDHC3_CMD               0x1d4
 			MX8MM_IOMUXC_NAND_DATA04_USDHC3_DATA0           0x1d4
 			MX8MM_IOMUXC_NAND_DATA05_USDHC3_DATA1           0x1d4
@@ -135,7 +110,7 @@
 	/* eMMC 200 MHz */
 	pinctrl_usdhc3_200mhz: usdhc3-200mhzgrp {
 		fsl,pins = <
-			MX8MM_IOMUXC_NAND_WE_B_USDHC3_CLK               0x40000196
+			MX8MM_IOMUXC_NAND_WE_B_USDHC3_CLK               0x196
 			MX8MM_IOMUXC_NAND_WP_B_USDHC3_CMD               0x1d6
 			MX8MM_IOMUXC_NAND_DATA04_USDHC3_DATA0           0x1d6
 			MX8MM_IOMUXC_NAND_DATA05_USDHC3_DATA1           0x1d6

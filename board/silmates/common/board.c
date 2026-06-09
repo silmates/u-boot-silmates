@@ -266,33 +266,47 @@ void *board_fdt_blob_setup(int *err)
 
 int board_late_init_silmates(void)
 {
-	int i, id, macid = 0;
-	struct silmates_board_description *desc;
-	phys_size_t bootm_size = gd->ram_top - gd->ram_base;
+        int id;
+        char mac_str[18];
+        struct silmates_board_description *desc;
+        phys_size_t bootm_size = gd->ram_top - gd->ram_base;
 
-	env_set_addr("bootm_low", (void *)gd->ram_base);
-	env_set_addr("bootm_size", (void *)bootm_size);
+        env_set_addr("bootm_low", (void *)gd->ram_base);
+        env_set_addr("bootm_size", (void *)bootm_size);
 
-	id = 0;
-	desc = &board_info[id];
+        id = 0;
+        desc = &board_info[id];
 
-	if (desc && desc->header == EEPROM_HEADER_MAGIC) {
-		if (desc->manufacturer[0])
-			env_set("manufacturer", desc->manufacturer);
-		if (desc->name[0])
-			 env_set("board_name", desc->name);
-		if (desc->revision[0])
-			env_set("board_rev", desc->revision);
-		if (desc->serial[0])
-			env_set("serial#", desc->serial);
-	}
+        if (desc && desc->header == EEPROM_HEADER_MAGIC) {
+                if (desc->manufacturer[0])
+                        env_set("manufacturer", desc->manufacturer);
+                if (desc->name[0])
+                        env_set("board_name", desc->name);
+                if (desc->revision[0])
+                        env_set("board_rev", desc->revision);
+                if (desc->serial[0])
+                        env_set("serial#", desc->serial);
+        }
 
-	u8 *mac = desc->mac_addr[0];
-	// printf("ethaddr set: %pM\n", mac);
-	if (is_valid_ethaddr(mac))
-		eth_env_set_enetaddr("ethaddr", mac);
+		u8 *mac = (u8 *)desc->mac_addr[0];
+        u8 ethaddr[6];
 
-	return 0;
+        ethaddr[0] = mac[0];
+        ethaddr[1] = mac[1];
+        ethaddr[2] = mac[2];
+        ethaddr[3] = mac[5];
+        ethaddr[4] = mac[6];
+        ethaddr[5] = mac[7];
+
+        snprintf(mac_str, sizeof(mac_str),
+                 "%02x:%02x:%02x:%02x:%02x:%02x",
+                 ethaddr[0], ethaddr[1], ethaddr[2],
+                 ethaddr[3], ethaddr[4], ethaddr[5]);
+
+        env_set("ethaddr", mac_str);
+        // printf("ethaddr set: %s\n", mac_str);
+
+        return 0;
 }
 
 static char *board_name = DEVICE_TREE;
